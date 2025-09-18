@@ -5,6 +5,8 @@ class InspectionItem {
   final String? description;
   final int sortOrder;
   final DateTime createdAt;
+  final int? parentId;
+  final String? parentName; // For display purposes when parent is deleted
 
   InspectionItem({
     this.id,
@@ -13,6 +15,8 @@ class InspectionItem {
     this.description,
     required this.sortOrder,
     required this.createdAt,
+    this.parentId,
+    this.parentName,
   });
 
   Map<String, dynamic> toMap() {
@@ -23,6 +27,7 @@ class InspectionItem {
       'description': description,
       'sort_order': sortOrder,
       'created_at': createdAt.millisecondsSinceEpoch,
+      'parent_id': parentId,
     };
   }
 
@@ -34,6 +39,8 @@ class InspectionItem {
       description: map['description'],
       sortOrder: map['sort_order'],
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at']),
+      parentId: map['parent_id'],
+      parentName: map['parent_name'], // This will be populated via JOIN queries
     );
   }
 
@@ -44,6 +51,8 @@ class InspectionItem {
     String? description,
     int? sortOrder,
     DateTime? createdAt,
+    int? parentId,
+    String? parentName,
   }) {
     return InspectionItem(
       id: id ?? this.id,
@@ -52,6 +61,8 @@ class InspectionItem {
       description: description ?? this.description,
       sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
+      parentId: parentId ?? this.parentId,
+      parentName: parentName ?? this.parentName,
     );
   }
 }

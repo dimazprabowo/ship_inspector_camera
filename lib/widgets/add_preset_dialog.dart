@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/inspection_preset.dart';
 import '../models/inspection_preset_item.dart';
+import '../models/parent_category.dart';
 import '../services/database_helper.dart';
 
 class AddPresetDialog extends StatefulWidget {
@@ -24,12 +25,29 @@ class _AddPresetDialogState extends State<AddPresetDialog> {
   final DatabaseHelper _dbHelper = DatabaseHelper();
   
   final List<PresetItemData> _items = [];
+  List<ParentCategory> _parentCategories = [];
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
+    _loadParentCategories();
     _addNewItem();
+  }
+
+  Future<void> _loadParentCategories() async {
+    try {
+      final categories = await _dbHelper.getAllParentCategories();
+      setState(() {
+        _parentCategories = categories;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading categories: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -98,6 +116,8 @@ class _AddPresetDialogState extends State<AddPresetDialog> {
               presetId: presetId,
               title: itemData.titleController.text.trim(),
               description: itemData.descriptionController.text.trim(),
+              parentId: itemData.selectedParentCategory?.id,
+              parentName: itemData.selectedParentCategory?.name,
               sortOrder: itemData.sortOrder,
               createdAt: DateTime.now().millisecondsSinceEpoch,
             );
@@ -179,6 +199,33 @@ class _AddPresetDialogState extends State<AddPresetDialog> {
                         padding: const EdgeInsets.all(12),
                         child: Column(
                           children: [
+                            // Parent Category Dropdown
+                            DropdownButtonFormField<ParentCategory>(
+                              value: item.selectedParentCategory,
+                              decoration: const InputDecoration(
+                                labelText: 'Kategori',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                              items: _parentCategories.map((category) {
+                                return DropdownMenuItem<ParentCategory>(
+                                  value: category,
+                                  child: Text(category.name),
+                                );
+                              }).toList(),
+                              onChanged: (ParentCategory? newValue) {
+                                setState(() {
+                                  item.selectedParentCategory = newValue;
+                                });
+                              },
+                              validator: (value) {
+                                if (value == null) {
+                                  return 'Pilih kategori';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 8),
                             Row(
                               children: [
                                 CircleAvatar(
@@ -266,11 +313,13 @@ class PresetItemData {
   final TextEditingController titleController;
   final TextEditingController descriptionController;
   int sortOrder;
+  ParentCategory? selectedParentCategory;
 
   PresetItemData({
     required this.titleController,
     required this.descriptionController,
     required this.sortOrder,
+    this.selectedParentCategory,
   });
 }
 

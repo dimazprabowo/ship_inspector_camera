@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/inspection_item.dart';
+import '../models/parent_category.dart';
 import '../services/database_helper.dart';
 
 class AddInspectionItemDialog extends StatefulWidget {
@@ -17,6 +18,29 @@ class _AddInspectionItemDialogState extends State<AddInspectionItemDialog> {
   final _descriptionController = TextEditingController();
   final DatabaseHelper _dbHelper = DatabaseHelper();
   bool _isLoading = false;
+  List<ParentCategory> _parentCategories = [];
+  ParentCategory? _selectedParentCategory;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadParentCategories();
+  }
+
+  Future<void> _loadParentCategories() async {
+    try {
+      final categories = await _dbHelper.getAllParentCategories();
+      setState(() {
+        _parentCategories = categories;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading categories: $e')),
+        );
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -44,6 +68,8 @@ class _AddInspectionItemDialogState extends State<AddInspectionItemDialog> {
             : _descriptionController.text.trim(),
         sortOrder: existingItems.length + 1,
         createdAt: DateTime.now(),
+        parentId: _selectedParentCategory?.id,
+        parentName: _selectedParentCategory?.name,
       );
 
       final itemId = await _dbHelper.insertInspectionItem(newItem);
@@ -71,9 +97,40 @@ class _AddInspectionItemDialogState extends State<AddInspectionItemDialog> {
       title: const Text('Tambah Item Inspeksi'),
       content: Form(
         key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+            DropdownButtonFormField<ParentCategory?>(
+              value: _selectedParentCategory,
+              decoration: const InputDecoration(
+                labelText: 'Kategori',
+                hintText: 'Pilih kategori (opsional)',
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                // const DropdownMenuItem<ParentCategory?>(
+                //   value: null,
+                //   child: Text('Tanpa Kategori'),
+                // ),
+                ..._parentCategories.map((category) {
+                  return DropdownMenuItem<ParentCategory?>(
+                    value: category,
+                    child: Text(
+                      category.name,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  );
+                }).toList(),
+              ],
+              onChanged: (ParentCategory? value) {
+                setState(() {
+                  _selectedParentCategory = value;
+                });
+              },
+            ),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _titleController,
               decoration: const InputDecoration(
@@ -102,6 +159,7 @@ class _AddInspectionItemDialogState extends State<AddInspectionItemDialog> {
             ),
           ],
         ),
+      ),
       ),
       actions: [
         TextButton(

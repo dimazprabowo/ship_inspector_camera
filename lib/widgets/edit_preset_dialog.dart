@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/inspection_preset.dart';
 import '../models/inspection_preset_item.dart';
+import '../models/parent_category.dart';
 import '../services/database_helper.dart';
 
 class PresetItemData {
@@ -8,12 +9,14 @@ class PresetItemData {
   final TextEditingController titleController;
   final TextEditingController descriptionController;
   int sortOrder;
+  ParentCategory? selectedParentCategory;
 
   PresetItemData({
     this.id,
     required this.titleController,
     required this.descriptionController,
     required this.sortOrder,
+    this.selectedParentCategory,
   });
 }
 
@@ -38,6 +41,7 @@ class _EditPresetDialogState extends State<EditPresetDialog> {
   final DatabaseHelper _dbHelper = DatabaseHelper();
   
   List<PresetItemData> _items = [];
+  List<ParentCategory> _parentCategories = [];
   bool _isLoading = false;
 
   @override
@@ -45,7 +49,23 @@ class _EditPresetDialogState extends State<EditPresetDialog> {
     super.initState();
     _nameController.text = widget.preset.name;
     _descriptionController.text = widget.preset.description;
+    _loadParentCategories();
     _loadPresetItems();
+  }
+
+  Future<void> _loadParentCategories() async {
+    try {
+      final categories = await _dbHelper.getAllParentCategories();
+      setState(() {
+        _parentCategories = categories;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading categories: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _loadPresetItems() async {
@@ -57,6 +77,16 @@ class _EditPresetDialogState extends State<EditPresetDialog> {
           titleController: TextEditingController(text: item.title),
           descriptionController: TextEditingController(text: item.description),
           sortOrder: item.sortOrder,
+          selectedParentCategory: item.parentId != null 
+              ? _parentCategories.firstWhere(
+                  (cat) => cat.id == item.parentId,
+                  orElse: () => ParentCategory(
+                    id: item.parentId,
+                    name: item.parentName ?? 'Unknown Category',
+                    createdAt: DateTime.now().millisecondsSinceEpoch,
+                  ),
+                )
+              : null,
         )).toList();
       });
       
@@ -137,6 +167,8 @@ class _EditPresetDialogState extends State<EditPresetDialog> {
               presetId: widget.preset.id!,
               title: itemData.titleController.text.trim(),
               description: itemData.descriptionController.text.trim(),
+              parentId: itemData.selectedParentCategory?.id,
+              parentName: itemData.selectedParentCategory?.name,
               sortOrder: itemData.sortOrder,
               createdAt: DateTime.now().millisecondsSinceEpoch,
             );
@@ -220,6 +252,33 @@ class _EditPresetDialogState extends State<EditPresetDialog> {
                         padding: const EdgeInsets.all(12),
                         child: Column(
                           children: [
+                            // Parent Category Dropdown
+                            DropdownButtonFormField<ParentCategory>(
+                              value: item.selectedParentCategory,
+                              decoration: const InputDecoration(
+                                labelText: 'Kategori',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                              items: _parentCategories.map((category) {
+                                return DropdownMenuItem<ParentCategory>(
+                                  value: category,
+                                  child: Text(category.name),
+                                );
+                              }).toList(),
+                              onChanged: (ParentCategory? newValue) {
+                                setState(() {
+                                  item.selectedParentCategory = newValue;
+                                });
+                              },
+                              validator: (value) {
+                                if (value == null) {
+                                  return 'Pilih kategori';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 8),
                             Row(
                               children: [
                                 CircleAvatar(

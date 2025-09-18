@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 import '../models/company.dart';
 import '../models/ship_type.dart';
 import '../models/inspection_item.dart';
@@ -28,6 +32,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
   final CameraService _cameraService = CameraService();
   List<InspectionItem> _inspectionItems = [];
   Map<int, List<InspectionPhoto>> _itemPhotos = {};
+  Map<String, bool> _categoryCollapsedState = {};
   bool _isLoading = true;
 
   @override
@@ -61,6 +66,31 @@ class _InspectionScreenState extends State<InspectionScreen> {
         );
       }
     }
+  }
+
+  Map<String, List<InspectionItem>> _groupItemsByCategory() {
+    Map<String, List<InspectionItem>> groupedItems = {};
+    List<InspectionItem> itemsWithoutCategory = [];
+    
+    for (var item in _inspectionItems) {
+      if (item.parentName != null && item.parentName!.isNotEmpty) {
+        String categoryName = item.parentName!;
+        if (!groupedItems.containsKey(categoryName)) {
+          groupedItems[categoryName] = [];
+        }
+        groupedItems[categoryName]!.add(item);
+      } else {
+        // Items without category will be handled separately
+        itemsWithoutCategory.add(item);
+      }
+    }
+    
+    // Add items without category as a special key for separate handling
+    if (itemsWithoutCategory.isNotEmpty) {
+      groupedItems['__ITEMS_WITHOUT_CATEGORY__'] = itemsWithoutCategory;
+    }
+    
+    return groupedItems;
   }
 
   Future<void> _capturePhoto(InspectionItem item) async {
@@ -412,6 +442,146 @@ class _InspectionScreenState extends State<InspectionScreen> {
                   onPressed: () => Navigator.pop(context),
                   child: const Text('OK'),
                 ),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    try {
+                      // Get ShipInspectorExports folder path instead of specific file
+                      String folderPath;
+                      if (Platform.isAndroid) {
+                        final Directory? downloadsDir = await getExternalStorageDirectory();
+                        if (downloadsDir != null) {
+                          folderPath = '${downloadsDir.path}/ShipInspectorExports';
+                        } else {
+                          folderPath = '/storage/emulated/0/Download/ShipInspectorExports';
+                        }
+                      } else if (Platform.isWindows) {
+                        final Directory? documentsDir = await getApplicationDocumentsDirectory();
+                        if (documentsDir != null) {
+                          folderPath = '${documentsDir.path}\\ShipInspectorExports';
+                        } else {
+                          folderPath = 'Documents\\ShipInspectorExports';
+                        }
+                      } else {
+                        folderPath = exportPath ?? '/storage/emulated/0/Download/ShipInspectorExports'; // Fallback to original path or default
+                      }
+                      
+                      debugPrint('Opening ShipInspectorExports folder: $folderPath');
+                      
+                      if (Platform.isAndroid) {
+                        // Android: Use intent to open file manager
+                        try {
+                          const platform = MethodChannel('flutter.native/helper');
+                          await platform.invokeMethod('openFileManager', {
+                            'path': folderPath,
+                          });
+                          debugPrint('Android file manager opened successfully');
+                          
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Membuka folder ShipInspectorExports...'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          debugPrint('Failed to open Android file manager: $e');
+                          // Fallback: Show path in snackbar
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Folder ShipInspectorExports:'),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      folderPath,
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Text('Buka file manager dan navigasi ke lokasi tersebut'),
+                                  ],
+                                ),
+                                duration: const Duration(seconds: 8),
+                              ),
+                            );
+                          }
+                        }
+                      } else if (Platform.isWindows) {
+                        // Windows: Use explorer command to open ShipInspectorExports folder
+                        String windowsPath = folderPath.replaceAll('/', '\\');
+                        debugPrint('Windows folder path: $windowsPath');
+                        
+                        // Open the ShipInspectorExports folder directly
+                        final result = await Process.run('cmd', ['/c', 'explorer', windowsPath]);
+                        debugPrint('Explorer result: ${result.exitCode}');
+                        debugPrint('Explorer stdout: ${result.stdout}');
+                        debugPrint('Explorer stderr: ${result.stderr}');
+                        
+                        if (result.exitCode != 0) {
+                          // Fallback 1: Extract directory and open it
+                          final lastBackslash = windowsPath.lastIndexOf('\\');
+                          String directory = lastBackslash > 0 ? windowsPath.substring(0, lastBackslash) : windowsPath;
+                          debugPrint('Fallback: opening directory: $directory');
+                          
+                          final result2 = await Process.run('cmd', ['/c', 'explorer', directory]);
+                          debugPrint('Directory explorer result: ${result2.exitCode}');
+                          
+                          if (result2.exitCode != 0) {
+                            // Fallback 2: Use start command
+                            final result3 = await Process.run('cmd', ['/c', 'start', directory]);
+                            debugPrint('Start command result: ${result3.exitCode}');
+                          }
+                        }
+                        
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Membuka folder ShipInspectorExports...'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } else {
+                        // Other platforms: Show path info
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Folder ShipInspectorExports:'),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    folderPath,
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                              duration: const Duration(seconds: 5),
+                              backgroundColor: Colors.blue,
+                            ),
+                          );
+                        }
+                      }
+                    } catch (e) {
+                      debugPrint('Error opening folder: $e');
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Tidak dapat membuka folder: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.folder_open),
+                  label: const Text('Buka Folder'),
+                ),
               ],
             ),
           );
@@ -498,104 +668,211 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       ),
                       const SizedBox(height: 16),
                       Expanded(
-                        child: ListView.builder(
-                          itemCount: _inspectionItems.length,
-                          itemBuilder: (context, index) {
-                            final item = _inspectionItems[index];
-                            final photos = _itemPhotos[item.id!] ?? [];
-
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 16),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            item.title,
-                                            style: const TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                        PopupMenuButton<String>(
-                                          onSelected: (value) {
-                                            if (value == 'edit') {
-                                              _editInspectionItem(item);
-                                            } else if (value == 'delete') {
-                                              _deleteInspectionItem(item);
-                                            }
-                                          },
-                                          itemBuilder: (context) => [
-                                            const PopupMenuItem(
-                                              value: 'edit',
-                                              child: Row(
-                                                children: [
-                                                  Icon(Icons.edit, color: Colors.blue),
-                                                  SizedBox(width: 8),
-                                                  Text('Edit Item'),
-                                                ],
-                                              ),
-                                            ),
-                                            const PopupMenuItem(
-                                              value: 'delete',
-                                              child: Row(
-                                                children: [
-                                                  Icon(Icons.delete, color: Colors.red),
-                                                  SizedBox(width: 8),
-                                                  Text('Hapus Item'),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                    if (item.description != null) ...[
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        item.description!,
-                                        style: TextStyle(
-                                          color: Colors.grey[600],
-                                        ),
-                                      ),
-                                    ],
-                                    const SizedBox(height: 12),
-                                    if (photos.isNotEmpty)
-                                      PhotoGridWidget(
-                                        photos: photos,
-                                        onDeletePhoto: (photo) => _deletePhoto(photo, item.id!),
-                                      ),
-                                    const SizedBox(height: 12),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: ElevatedButton.icon(
-                                            onPressed: () => _showPhotoOptions(item),
-                                            icon: const Icon(Icons.add_a_photo),
-                                            label: Text(
-                                              photos.isEmpty 
-                                                  ? 'Tambah Foto' 
-                                                  : 'Tambah Foto (${photos.length})',
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+                        child: _buildGroupedInspectionItems(),
                       ),
                     ],
                   ),
                 ),
+    );
+  }
+
+  Widget _buildGroupedInspectionItems() {
+    final groupedItems = _groupItemsByCategory();
+    final categories = groupedItems.keys.where((key) => key != '__ITEMS_WITHOUT_CATEGORY__').toList()..sort();
+    final itemsWithoutCategory = groupedItems['__ITEMS_WITHOUT_CATEGORY__'] ?? [];
+
+    return ListView(
+      children: [
+        // Display categorized items in cards
+        ...categories.map((categoryName) {
+          final items = groupedItems[categoryName]!;
+          final isCollapsed = _categoryCollapsedState[categoryName] ?? false;
+          
+          return Card(
+            margin: const EdgeInsets.only(bottom: 16),
+            elevation: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Category Header - Now clickable
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      _categoryCollapsedState[categoryName] = !isCollapsed;
+                    });
+                  },
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    topRight: Radius.circular(12),
+                  ),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(12),
+                        topRight: Radius.circular(12),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isCollapsed ? Icons.expand_more : Icons.expand_less,
+                          color: Colors.blue.shade700,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(
+                          Icons.category,
+                          color: Colors.blue.shade700,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            categoryName,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade700,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${items.length} item${items.length > 1 ? 's' : ''}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blue.shade700,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Items in this category - Only show if not collapsed
+                if (!isCollapsed)
+                  ...items.map((item) => _buildInspectionItemCard(item)),
+              ],
+            ),
+          );
+        }),
+        
+        // Display items without category as loose items (not in cards)
+        if (itemsWithoutCategory.isNotEmpty) ...[
+          if (categories.isNotEmpty) const SizedBox(height: 16),
+          ...itemsWithoutCategory.map((item) => Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: _buildInspectionItemCard(item),
+          )),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildInspectionItemCard(InspectionItem item) {
+    final photos = _itemPhotos[item.id!] ?? [];
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Card(
+        elevation: 1,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    onSelected: (value) {
+                      if (value == 'edit') {
+                        _editInspectionItem(item);
+                      } else if (value == 'delete') {
+                        _deleteInspectionItem(item);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit, color: Colors.blue),
+                            SizedBox(width: 8),
+                            Text('Edit Item'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('Hapus Item'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              if (item.description != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  item.description!,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 3,
+                ),
+              ],
+              const SizedBox(height: 12),
+              if (photos.isNotEmpty)
+                PhotoGridWidget(
+                  photos: photos,
+                  onDeletePhoto: (photo) => _deletePhoto(photo, item.id!),
+                ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _showPhotoOptions(item),
+                      icon: const Icon(Icons.add_a_photo),
+                      label: Text(
+                        photos.isEmpty 
+                            ? 'Tambah Foto' 
+                            : 'Tambah Foto (${photos.length})',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

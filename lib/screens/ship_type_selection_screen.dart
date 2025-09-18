@@ -8,6 +8,7 @@ import '../widgets/ship_type_dialog.dart';
 import '../widgets/add_preset_dialog.dart';
 import '../widgets/edit_preset_dialog.dart';
 import 'inspection_screen.dart';
+import 'parent_category_management_screen.dart';
 
 class ShipTypeSelectionScreen extends StatefulWidget {
   final Company company;
@@ -216,6 +217,13 @@ class _ShipTypeSelectionScreenState extends State<ShipTypeSelectionScreen> {
             onSelected: (value) {
               if (value == 'manage_presets') {
                 _showPresetManagement();
+              } else if (value == 'manage_parent_categories') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ParentCategoryManagementScreen(),
+                  ),
+                );
               }
             },
             itemBuilder: (context) => [
@@ -224,6 +232,14 @@ class _ShipTypeSelectionScreenState extends State<ShipTypeSelectionScreen> {
                 child: ListTile(
                   leading: Icon(Icons.inventory_2),
                   title: Text('Kelola Template'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'manage_parent_categories',
+                child: ListTile(
+                  leading: Icon(Icons.category),
+                  title: Text('Kelola Kategori'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),

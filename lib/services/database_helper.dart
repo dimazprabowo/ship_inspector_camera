@@ -7,6 +7,7 @@ import '../models/inspection_item.dart';
 import '../models/inspection_photo.dart';
 import '../models/inspection_preset.dart';
 import '../models/inspection_preset_item.dart';
+import '../models/parent_category.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -25,7 +26,7 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'ship_inspector.db');
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -105,8 +106,26 @@ class DatabaseHelper {
       )
     ''');
 
+    // Create parent_categories table
+    await db.execute('''
+      CREATE TABLE parent_categories(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    ''');
+
+    // Add parent_id column to inspection_items table
+    await db.execute('ALTER TABLE inspection_items ADD COLUMN parent_id INTEGER');
+    
+    // Add parent_id column to inspection_preset_items table
+    await db.execute('ALTER TABLE inspection_preset_items ADD COLUMN parent_id INTEGER');
+
     // Insert sample data
     await _insertSampleData(db);
+    
+    // Insert default parent categories
+    await _insertDefaultParentCategories(db);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -154,6 +173,26 @@ class DatabaseHelper {
         await db.execute('UPDATE inspection_presets SET company_id = ? WHERE company_id IS NULL', [firstCompanyId]);
       }
     }
+    
+    if (oldVersion < 5) {
+      // Create parent_categories table
+      await db.execute('''
+        CREATE TABLE parent_categories(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        )
+      ''');
+      
+      // Add parent_id column to inspection_items table
+      await db.execute('ALTER TABLE inspection_items ADD COLUMN parent_id INTEGER');
+      
+      // Add parent_id column to inspection_preset_items table
+      await db.execute('ALTER TABLE inspection_preset_items ADD COLUMN parent_id INTEGER');
+      
+      // Insert some default parent categories
+      await _insertDefaultParentCategories(db);
+    }
   }
 
   Future<void> _insertSampleData(Database db) async {
@@ -200,20 +239,6 @@ class DatabaseHelper {
       'created_at': DateTime.now().millisecondsSinceEpoch,
     });
 
-    int cargoPresetId = await db.insert('inspection_presets', {
-      'name': 'Cargo Ship Standard',
-      'description': 'Template inspeksi standar untuk kapal kargo',
-      'company_id': companyId,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    int tankerPresetId = await db.insert('inspection_presets', {
-      'name': 'Tanker Standard',
-      'description': 'Template inspeksi standar untuk kapal tanker',
-      'company_id': companyId,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
     // Insert preset items for tugboat
     await db.insert('inspection_preset_items', {
       'preset_id': tugboatPresetId,
@@ -252,56 +277,6 @@ class DatabaseHelper {
       'title': 'Mesin Utama',
       'description': 'Foto mesin utama kapal',
       'sort_order': 5,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    // Insert preset items for cargo ship
-    await db.insert('inspection_preset_items', {
-      'preset_id': cargoPresetId,
-      'title': 'Ruang Kargo',
-      'description': 'Foto ruang kargo utama',
-      'sort_order': 1,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    await db.insert('inspection_preset_items', {
-      'preset_id': cargoPresetId,
-      'title': 'Crane Loading',
-      'description': 'Foto crane untuk loading',
-      'sort_order': 2,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    await db.insert('inspection_preset_items', {
-      'preset_id': cargoPresetId,
-      'title': 'Hatch Cover',
-      'description': 'Foto penutup palka kargo',
-      'sort_order': 3,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    // Insert preset items for tanker
-    await db.insert('inspection_preset_items', {
-      'preset_id': tankerPresetId,
-      'title': 'Tangki Utama',
-      'description': 'Foto tangki penyimpanan utama',
-      'sort_order': 1,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    await db.insert('inspection_preset_items', {
-      'preset_id': tankerPresetId,
-      'title': 'Sistem Pompa',
-      'description': 'Foto sistem pompa',
-      'sort_order': 2,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    await db.insert('inspection_preset_items', {
-      'preset_id': tankerPresetId,
-      'title': 'Manifold',
-      'description': 'Foto manifold loading/unloading',
-      'sort_order': 3,
       'created_at': DateTime.now().millisecondsSinceEpoch,
     });
   }
@@ -363,12 +338,15 @@ class DatabaseHelper {
 
   Future<List<InspectionItem>> getInspectionItemsByShipType(int shipTypeId) async {
     final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'inspection_items',
-      where: 'ship_type_id = ?',
-      whereArgs: [shipTypeId],
-      orderBy: 'sort_order ASC',
-    );
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT 
+        i.*,
+        pc.name as parent_name
+      FROM inspection_items i
+      LEFT JOIN parent_categories pc ON i.parent_id = pc.id
+      WHERE i.ship_type_id = ?
+      ORDER BY i.sort_order ASC
+    ''', [shipTypeId]);
     return List.generate(maps.length, (i) => InspectionItem.fromMap(maps[i]));
   }
 
@@ -486,5 +464,77 @@ class DatabaseHelper {
   Future<void> close() async {
     final db = await database;
     db.close();
+  }
+
+  // Insert default parent categories
+  Future<void> _insertDefaultParentCategories(Database db) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    
+    await db.insert('parent_categories', {
+      'name': 'Konstruksi dan Plat',
+      'created_at': now,
+    });
+
+    await db.insert('parent_categories', {
+      'name': 'Ruangan',
+      'created_at': now,
+    });
+    
+  }
+
+  // Parent Category CRUD operations
+  Future<int> insertParentCategory(ParentCategory category) async {
+    final db = await database;
+    return await db.insert('parent_categories', category.toMap());
+  }
+
+  Future<List<ParentCategory>> getAllParentCategories() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'parent_categories',
+      orderBy: 'name ASC',
+    );
+    return List.generate(maps.length, (i) => ParentCategory.fromMap(maps[i]));
+  }
+
+  Future<ParentCategory?> getParentCategory(int id) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'parent_categories',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    if (maps.isNotEmpty) {
+      return ParentCategory.fromMap(maps.first);
+    }
+    return null;
+  }
+
+  Future<int> updateParentCategory(ParentCategory category) async {
+    final db = await database;
+    return await db.update('parent_categories', category.toMap(), where: 'id = ?', whereArgs: [category.id]);
+  }
+
+  Future<int> deleteParentCategory(int id) async {
+    final db = await database;
+    
+    // First, clear parent_id from inspection_items that reference this category
+    await db.update(
+      'inspection_items', 
+      {'parent_id': null}, 
+      where: 'parent_id = ?', 
+      whereArgs: [id]
+    );
+    
+    // Clear parent_id from inspection_preset_items that reference this category
+    await db.update(
+      'inspection_preset_items', 
+      {'parent_id': null}, 
+      where: 'parent_id = ?', 
+      whereArgs: [id]
+    );
+    
+    // Then delete the parent category
+    return await db.delete('parent_categories', where: 'id = ?', whereArgs: [id]);
   }
 }

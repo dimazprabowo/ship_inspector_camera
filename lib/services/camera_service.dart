@@ -10,6 +10,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:image/image.dart' as img;
 import '../models/inspection_photo.dart';
+import '../models/inspection_item.dart';
 import 'database_helper.dart';
 
 class CameraService {
@@ -329,17 +330,33 @@ class CameraService {
       final archive = Archive();
       bool hasPhotos = false;
 
-      // Add photos for each inspection item
+      // Group items by parent category
+      Map<String, List<InspectionItem>> itemsByParent = {};
       for (var item in inspectionItems) {
-        final photos = await _dbHelper.getPhotosByInspectionItem(item.id!);
+        final parentKey = item.parentName ?? 'Uncategorized';
+        if (!itemsByParent.containsKey(parentKey)) {
+          itemsByParent[parentKey] = [];
+        }
+        itemsByParent[parentKey]!.add(item);
+      }
+
+      // Add photos for each parent category
+      for (var parentCategory in itemsByParent.keys) {
+        final items = itemsByParent[parentCategory]!;
         
-        for (var photo in photos) {
-          final file = File(photo.filePath);
-          if (await file.exists()) {
-            final bytes = await file.readAsBytes();
-            final archiveFile = ArchiveFile(photo.fileName, bytes.length, bytes);
-            archive.addFile(archiveFile);
-            hasPhotos = true;
+        for (var item in items) {
+          final photos = await _dbHelper.getPhotosByInspectionItem(item.id!);
+          
+          for (var photo in photos) {
+            final file = File(photo.filePath);
+            if (await file.exists()) {
+              final bytes = await file.readAsBytes();
+              // Create folder structure: ParentCategory/ItemTitle/photo.jpg
+              final folderPath = '$parentCategory/${item.title}/${photo.fileName}';
+              final archiveFile = ArchiveFile(folderPath, bytes.length, bytes);
+              archive.addFile(archiveFile);
+              hasPhotos = true;
+            }
           }
         }
       }
@@ -419,11 +436,17 @@ class CameraService {
         return null;
       }
 
-      // Group photos by inspection item
-      Map<String, List<Map<String, dynamic>>> photosByItem = {};
+      // Group photos by parent category first, then by inspection item
+      Map<String, Map<String, List<Map<String, dynamic>>>> photosByParentAndItem = {};
+      
+      debugPrint('Starting to group ${inspectionItems.length} inspection items by parent category');
       
       for (var item in inspectionItems) {
+        debugPrint('Processing item: ${item.title} (Parent: ${item.parentName ?? 'Uncategorized'})');
+        
         final photos = await _dbHelper.getPhotosByInspectionItem(item.id!);
+        debugPrint('  Found ${photos.length} photos for item ${item.title}');
+        
         if (photos.isNotEmpty) {
           List<Map<String, dynamic>> itemPhotos = [];
           
@@ -461,13 +484,27 @@ class CameraService {
               });
             }
           }
+          
           if (itemPhotos.isNotEmpty) {
-            photosByItem[item.title] = itemPhotos;
+            final parentKey = item.parentName ?? 'Uncategorized';
+            if (!photosByParentAndItem.containsKey(parentKey)) {
+              photosByParentAndItem[parentKey] = {};
+            }
+            photosByParentAndItem[parentKey]![item.title] = itemPhotos;
+            debugPrint('  Added ${itemPhotos.length} photos to category "$parentKey" for item "${item.title}"');
           }
         }
       }
+      
+      debugPrint('Final grouping result: ${photosByParentAndItem.length} categories');
+      for (var entry in photosByParentAndItem.entries) {
+        debugPrint('  Category "${entry.key}": ${entry.value.length} items');
+        for (var itemEntry in entry.value.entries) {
+          debugPrint('    Item "${itemEntry.key}": ${itemEntry.value.length} photos');
+        }
+      }
 
-      if (photosByItem.isEmpty) {
+      if (photosByParentAndItem.isEmpty) {
         return null;
       }
 
@@ -501,17 +538,55 @@ class CameraService {
         ),
       );
 
-      // Create pages grouped by inspection item title with pagination support
-      photosByItem.forEach((itemTitle, photos) {
-        // Process photos in chunks of 8 per page for this item
-        for (int pageStart = 0; pageStart < photos.length; pageStart += 8) {
-          final pagePhotos = photos.skip(pageStart).take(8).toList();
+      // Create pages grouped by parent category - all items in same category on same pages
+      for (var entry in photosByParentAndItem.entries) {
+        final parentCategory = entry.key;
+        final itemsMap = entry.value;
+        
+        // Debug log to check what we're processing
+        debugPrint('Processing category: $parentCategory with ${itemsMap.length} items');
+        
+        // Collect all photos from all items in this category
+        List<Map<String, dynamic>> allCategoryPhotos = [];
+        
+        for (var itemEntry in itemsMap.entries) {
+          final itemTitle = itemEntry.key;
+          final photos = itemEntry.value;
+          
+          debugPrint('  Item: $itemTitle has ${photos.length} photos');
+          
+          // Add item title as metadata to each photo
+          for (var photo in photos) {
+            allCategoryPhotos.add({
+              ...photo,
+              'itemTitle': itemTitle,
+            });
+          }
+        }
+        
+        debugPrint('Total photos for category $parentCategory: ${allCategoryPhotos.length}');
+        
+        if (allCategoryPhotos.isEmpty) {
+          debugPrint('Skipping empty category: $parentCategory');
+          continue;
+        }
+        
+        // Process all category photos in chunks of 6 per page
+        for (int pageStart = 0; pageStart < allCategoryPhotos.length; pageStart += 6) {
+          final pagePhotos = allCategoryPhotos.skip(pageStart).take(6).toList();
+          
+          debugPrint('Page ${(pageStart ~/ 6) + 1}: Processing ${pagePhotos.length} photos (from index $pageStart)');
+          for (int i = 0; i < pagePhotos.length; i++) {
+            debugPrint('  Photo ${i + 1}: ${pagePhotos[i]['name']} (Item: ${pagePhotos[i]['itemTitle']})');
+          }
           
           // Create chunks of 2 photos per row
           final photoChunks = <List<Map<String, dynamic>>>[];
           for (int i = 0; i < pagePhotos.length; i += 2) {
             photoChunks.add(pagePhotos.skip(i).take(2).toList());
           }
+          
+          debugPrint('Created ${photoChunks.length} photo chunks for this page');
 
           pdf.addPage(
             pw.Page(
@@ -521,52 +596,88 @@ class CameraService {
                 return pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    // Item title
-                    pw.Text(
-                      pageStart == 0 ? itemTitle.toUpperCase() : '${itemTitle.toUpperCase()} (Lanjutan)',
-                      style: pw.TextStyle(
-                        fontSize: 16,
-                        fontWeight: pw.FontWeight.bold,
+                    // Category header
+                    pw.Center(
+                      child: pw.Text(
+                        'KATEGORI: ${parentCategory.toUpperCase()}',
+                        style: pw.TextStyle(
+                          fontSize: 16,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.blue800,
+                        ),
                       ),
                     ),
-                    pw.SizedBox(height: 20),
+                    pw.SizedBox(height: 15),
                     // Photo table with proper borders
                     pw.Table(
                       border: pw.TableBorder.all(color: PdfColors.black, width: 1),
                       columnWidths: {
-                        0: const pw.FixedColumnWidth(150),
-                        1: const pw.FixedColumnWidth(150),
+                        0: const pw.FixedColumnWidth(275),
+                        1: const pw.FixedColumnWidth(275),
                       },
-                      children: photoChunks.map((rowPhotos) {
+                      children: photoChunks.asMap().entries.map((entry) {
+                        final chunkIndex = entry.key;
+                        final rowPhotos = entry.value;
+                        debugPrint('Rendering chunk $chunkIndex with ${rowPhotos.length} photos');
+                        
                         return pw.TableRow(
                           children: [
                             // First photo cell
                             pw.Container(
-                              height: 160,
+                              height: 200,
                               padding: const pw.EdgeInsets.all(8),
                               child: pw.Column(
                                 mainAxisAlignment: pw.MainAxisAlignment.start,
                                 children: [
+                                  // Item title
                                   pw.Container(
-                                    width: 120,
+                                    width: double.infinity,
+                                    padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                                    decoration: pw.BoxDecoration(
+                                      color: PdfColors.blue50,
+                                      borderRadius: pw.BorderRadius.circular(4),
+                                    ),
+                                    child: pw.Text(
+                                      rowPhotos[0]['itemTitle'] ?? 'Unknown Item',
+                                      style: pw.TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: pw.FontWeight.bold,
+                                        color: PdfColors.blue800,
+                                      ),
+                                      textAlign: pw.TextAlign.center,
+                                      maxLines: 1,
+                                    ),
+                                  ),
+                                  pw.SizedBox(height: 8),
+                                  // Photo
+                                  pw.Container(
+                                    width: 150,
                                     height: 120,
                                     decoration: pw.BoxDecoration(
                                       border: pw.Border.all(color: PdfColors.grey400, width: 1),
                                     ),
-                                    child: pw.ClipRect(
-                                      child: pw.Image(
-                                        pw.MemoryImage(rowPhotos[0]['image']),
-                                        fit: pw.BoxFit.cover,
-                                        width: 120,
-                                        height: 120,
-                                      ),
-                                    ),
+                                    child: rowPhotos[0]['image'] != null 
+                                        ? pw.ClipRect(
+                                            child: pw.Image(
+                                              pw.MemoryImage(rowPhotos[0]['image']),
+                                              fit: pw.BoxFit.cover,
+                                              width: 150,
+                                              height: 120,
+                                            ),
+                                          )
+                                        : pw.Center(
+                                            child: pw.Text(
+                                              'No Image',
+                                              style: pw.TextStyle(color: PdfColors.red),
+                                            ),
+                                          ),
                                   ),
                                   pw.SizedBox(height: 8),
+                                  // Photo name
                                   pw.Container(
-                                    width: 120,
+                                    width: 150,
                                     child: pw.Text(
-                                      rowPhotos[0]['name'],
+                                      rowPhotos[0]['name'] ?? 'Unknown Photo',
                                       style: const pw.TextStyle(fontSize: 9),
                                       textAlign: pw.TextAlign.center,
                                       maxLines: 2,
@@ -577,32 +688,61 @@ class CameraService {
                             ),
                             // Second photo cell (or empty cell)
                             pw.Container(
-                              height: 160,
+                              height: 200,
                               padding: const pw.EdgeInsets.all(8),
                               child: rowPhotos.length > 1
                                   ? pw.Column(
                                       mainAxisAlignment: pw.MainAxisAlignment.start,
                                       children: [
+                                        // Item title
                                         pw.Container(
-                                          width: 120,
+                                          width: double.infinity,
+                                          padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                                          decoration: pw.BoxDecoration(
+                                            color: PdfColors.blue50,
+                                            borderRadius: pw.BorderRadius.circular(4),
+                                          ),
+                                          child: pw.Text(
+                                            rowPhotos[1]['itemTitle'] ?? 'Unknown Item',
+                                            style: pw.TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: pw.FontWeight.bold,
+                                              color: PdfColors.blue800,
+                                            ),
+                                            textAlign: pw.TextAlign.center,
+                                            maxLines: 1,
+                                          ),
+                                        ),
+                                        pw.SizedBox(height: 8),
+                                        // Photo
+                                        pw.Container(
+                                          width: 150,
                                           height: 120,
                                           decoration: pw.BoxDecoration(
                                             border: pw.Border.all(color: PdfColors.grey400, width: 1),
                                           ),
-                                          child: pw.ClipRect(
-                                            child: pw.Image(
-                                              pw.MemoryImage(rowPhotos[1]['image']),
-                                              fit: pw.BoxFit.cover,
-                                              width: 120,
-                                              height: 120,
-                                            ),
-                                          ),
+                                          child: rowPhotos[1]['image'] != null
+                                              ? pw.ClipRect(
+                                                  child: pw.Image(
+                                                    pw.MemoryImage(rowPhotos[1]['image']),
+                                                    fit: pw.BoxFit.cover,
+                                                    width: 150,
+                                                    height: 120,
+                                                  ),
+                                                )
+                                              : pw.Center(
+                                                  child: pw.Text(
+                                                    'No Image',
+                                                    style: pw.TextStyle(color: PdfColors.red),
+                                                  ),
+                                                ),
                                         ),
                                         pw.SizedBox(height: 8),
+                                        // Photo name
                                         pw.Container(
-                                          width: 120,
+                                          width: 150,
                                           child: pw.Text(
-                                            rowPhotos[1]['name'],
+                                            rowPhotos[1]['name'] ?? 'Unknown Photo',
                                             style: const pw.TextStyle(fontSize: 9),
                                             textAlign: pw.TextAlign.center,
                                             maxLines: 2,
@@ -622,7 +762,7 @@ class CameraService {
             ),
           );
         }
-      });
+      }
 
       // Use custom path if provided, otherwise use default directory
       final String exportDir;
