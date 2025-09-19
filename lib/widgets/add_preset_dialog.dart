@@ -200,7 +200,7 @@ class _AddPresetDialogState extends State<AddPresetDialog> {
                         child: Column(
                           children: [
                             // Parent Category Dropdown
-                            DropdownButtonFormField<ParentCategory>(
+                            DropdownButtonFormField<ParentCategory?>(
                               value: item.selectedParentCategory,
                               decoration: const InputDecoration(
                                 labelText: 'Kategori',
@@ -208,7 +208,7 @@ class _AddPresetDialogState extends State<AddPresetDialog> {
                                 isDense: true,
                               ),
                               items: _parentCategories.map((category) {
-                                return DropdownMenuItem<ParentCategory>(
+                                return DropdownMenuItem<ParentCategory?>(
                                   value: category,
                                   child: Text(category.name),
                                 );
@@ -217,12 +217,6 @@ class _AddPresetDialogState extends State<AddPresetDialog> {
                                 setState(() {
                                   item.selectedParentCategory = newValue;
                                 });
-                              },
-                              validator: (value) {
-                                if (value == null) {
-                                  return 'Pilih kategori';
-                                }
-                                return null;
                               },
                             ),
                             const SizedBox(height: 8),

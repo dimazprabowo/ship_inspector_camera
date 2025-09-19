@@ -426,12 +426,15 @@ class DatabaseHelper {
 
   Future<List<InspectionPresetItem>> getInspectionPresetItems(int presetId) async {
     final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'inspection_preset_items',
-      where: 'preset_id = ?',
-      whereArgs: [presetId],
-      orderBy: 'sort_order ASC',
-    );
+    final List<Map<String, dynamic>> maps = await db.rawQuery('''
+      SELECT 
+        ipi.*,
+        pc.name as parent_name
+      FROM inspection_preset_items ipi
+      LEFT JOIN parent_categories pc ON ipi.parent_id = pc.id
+      WHERE ipi.preset_id = ?
+      ORDER BY ipi.sort_order ASC
+    ''', [presetId]);
     return List.generate(maps.length, (i) => InspectionPresetItem.fromMap(maps[i]));
   }
 

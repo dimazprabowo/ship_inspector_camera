@@ -49,8 +49,12 @@ class _EditPresetDialogState extends State<EditPresetDialog> {
     super.initState();
     _nameController.text = widget.preset.name;
     _descriptionController.text = widget.preset.description;
-    _loadParentCategories();
-    _loadPresetItems();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    await _loadParentCategories();
+    await _loadPresetItems();
   }
 
   Future<void> _loadParentCategories() async {
@@ -72,22 +76,27 @@ class _EditPresetDialogState extends State<EditPresetDialog> {
     try {
       final items = await _dbHelper.getInspectionPresetItems(widget.preset.id!);
       setState(() {
-        _items = items.map((item) => PresetItemData(
-          id: item.id,
-          titleController: TextEditingController(text: item.title),
-          descriptionController: TextEditingController(text: item.description),
-          sortOrder: item.sortOrder,
-          selectedParentCategory: item.parentId != null 
-              ? _parentCategories.firstWhere(
-                  (cat) => cat.id == item.parentId,
-                  orElse: () => ParentCategory(
-                    id: item.parentId,
-                    name: item.parentName ?? 'Unknown Category',
-                    createdAt: DateTime.now().millisecondsSinceEpoch,
-                  ),
-                )
-              : null,
-        )).toList();
+        _items = items.map((item) {
+          ParentCategory? selectedCategory;
+          if (item.parentId != null) {
+            try {
+              selectedCategory = _parentCategories.firstWhere(
+                (cat) => cat.id == item.parentId,
+              );
+            } catch (e) {
+              // Category not found in current list, create a placeholder
+              selectedCategory = null;
+            }
+          }
+          
+          return PresetItemData(
+            id: item.id,
+            titleController: TextEditingController(text: item.title),
+            descriptionController: TextEditingController(text: item.description),
+            sortOrder: item.sortOrder,
+            selectedParentCategory: selectedCategory,
+          );
+        }).toList();
       });
       
       if (_items.isEmpty) {
@@ -253,7 +262,7 @@ class _EditPresetDialogState extends State<EditPresetDialog> {
                         child: Column(
                           children: [
                             // Parent Category Dropdown
-                            DropdownButtonFormField<ParentCategory>(
+                            DropdownButtonFormField<ParentCategory?>(
                               value: item.selectedParentCategory,
                               decoration: const InputDecoration(
                                 labelText: 'Kategori',
@@ -261,7 +270,7 @@ class _EditPresetDialogState extends State<EditPresetDialog> {
                                 isDense: true,
                               ),
                               items: _parentCategories.map((category) {
-                                return DropdownMenuItem<ParentCategory>(
+                                return DropdownMenuItem<ParentCategory?>(
                                   value: category,
                                   child: Text(category.name),
                                 );
@@ -270,12 +279,6 @@ class _EditPresetDialogState extends State<EditPresetDialog> {
                                 setState(() {
                                   item.selectedParentCategory = newValue;
                                 });
-                              },
-                              validator: (value) {
-                                if (value == null) {
-                                  return 'Pilih kategori';
-                                }
-                                return null;
                               },
                             ),
                             const SizedBox(height: 8),
