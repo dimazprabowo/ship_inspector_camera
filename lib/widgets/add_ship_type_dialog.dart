@@ -76,6 +76,7 @@ class _AddShipTypeDialogState extends State<AddShipTypeDialog> {
               content: Text(_selectedPreset != null 
                   ? 'Jenis kapal berhasil ditambahkan dengan preset ${_selectedPreset!.name}'
                   : 'Jenis kapal berhasil ditambahkan'),
+              backgroundColor: Colors.green,
             ),
           );
         }

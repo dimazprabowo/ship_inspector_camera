@@ -75,7 +75,7 @@ class _ShipTypeDialogState extends State<ShipTypeDialog> {
         await _dbHelper.updateShipType(updatedShipType);
         
         if (mounted) {
-          Navigator.pop(context, updatedShipType);
+          Navigator.pop(context, true); // Return true untuk menandakan berhasil update
         }
       }
     } catch (e) {
@@ -99,65 +99,67 @@ class _ShipTypeDialogState extends State<ShipTypeDialog> {
       title: Text(isEditing ? 'Edit Jenis Kapal' : 'Tambah Jenis Kapal'),
       content: Form(
         key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nama Jenis Kapal *',
-                hintText: 'Contoh: Tugboat, Cargo Ship, Tanker',
-                border: OutlineInputBorder(),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Nama Jenis Kapal *',
+                  hintText: 'Contoh: Tugboat, Cargo Ship, Tanker',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Nama jenis kapal harus diisi';
+                  }
+                  return null;
+                },
+                textCapitalization: TextCapitalization.words,
               ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Nama jenis kapal harus diisi';
-                }
-                return null;
-              },
-              textCapitalization: TextCapitalization.words,
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              readOnly: true,
-              decoration: InputDecoration(
-                labelText: 'Tanggal Inspeksi (Opsional)',
-                border: const OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  onPressed: () async {
-                    final date = await showDatePicker(
-                      context: context,
-                      initialDate: _selectedDate ?? DateTime.now(),
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime(2030),
-                    );
-                    if (date != null) {
-                      setState(() {
-                        _selectedDate = date;
-                      });
-                    }
-                  },
-                  icon: const Icon(Icons.calendar_today),
+              const SizedBox(height: 16),
+              TextFormField(
+                readOnly: true,
+                decoration: InputDecoration(
+                  labelText: 'Tanggal Inspeksi (Opsional)',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    onPressed: () async {
+                      final date = await showDatePicker(
+                        context: context,
+                        initialDate: _selectedDate ?? DateTime.now(),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2030),
+                      );
+                      if (date != null) {
+                        setState(() {
+                          _selectedDate = date;
+                        });
+                      }
+                    },
+                    icon: const Icon(Icons.calendar_today),
+                  ),
+                ),
+                controller: TextEditingController(
+                  text: _selectedDate != null 
+                      ? '${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year}'
+                      : '',
                 ),
               ),
-              controller: TextEditingController(
-                text: _selectedDate != null 
-                    ? '${_selectedDate!.day}/${_selectedDate!.month}/${_selectedDate!.year}'
-                    : '',
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _descriptionController,
+                decoration: const InputDecoration(
+                  labelText: 'Deskripsi (Opsional)',
+                  hintText: 'Deskripsi jenis kapal',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+                textCapitalization: TextCapitalization.sentences,
               ),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Deskripsi (Opsional)',
-                hintText: 'Deskripsi jenis kapal',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-              textCapitalization: TextCapitalization.sentences,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
       actions: [

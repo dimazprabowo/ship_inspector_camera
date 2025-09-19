@@ -49,7 +49,10 @@ class _ShipTypeSelectionScreenState extends State<ShipTypeSelectionScreen> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading ship types: $e')),
+          SnackBar(
+            content: Text('Error loading ship types: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -79,13 +82,21 @@ class _ShipTypeSelectionScreenState extends State<ShipTypeSelectionScreen> {
   }
 
   Future<void> _editShipType(ShipType shipType) async {
-    final result = await showDialog<ShipType>(
+    final result = await showDialog<bool>(
       context: context,
       builder: (context) => ShipTypeDialog(shipType: shipType, companyId: widget.company.id!),
     );
 
-    if (result != null) {
+    if (result == true) {
       await _loadShipTypes();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Jenis kapal berhasil diperbarui'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     }
   }
 
@@ -115,13 +126,19 @@ class _ShipTypeSelectionScreenState extends State<ShipTypeSelectionScreen> {
         await _loadShipTypes();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Jenis kapal berhasil dihapus')),
+            const SnackBar(
+              content: Text('Jenis kapal berhasil dihapus'),
+              backgroundColor: Colors.green,
+            ),
           );
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error deleting ship type: $e')),
+            SnackBar(
+              content: Text('Error deleting ship type: $e'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       }

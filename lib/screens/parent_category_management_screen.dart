@@ -96,7 +96,10 @@ class _ParentCategoryManagementScreenState extends State<ParentCategoryManagemen
       _loadCategories();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Kategori berhasil ditambahkan')),
+          const SnackBar(
+            content: Text('Kategori berhasil ditambahkan'),
+            backgroundColor: Colors.green,
+            ),
         );
       }
     }
@@ -158,7 +161,10 @@ class _ParentCategoryManagementScreenState extends State<ParentCategoryManagemen
       _loadCategories();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Kategori berhasil diupdate')),
+          const SnackBar(
+            content: Text('Kategori berhasil diupdate'),
+            backgroundColor: Colors.green,
+            ),
         );
       }
     }
@@ -201,13 +207,21 @@ class _ParentCategoryManagementScreenState extends State<ParentCategoryManagemen
         _loadCategories();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Kategori berhasil dihapus')),
+            SnackBar(
+              content: Text('Kategori berhasil dihapus'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
           );
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error deleting category: $e')),
+            SnackBar(
+              content: Text('Error deleting category: $e'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+            ),
           );
         }
       }
