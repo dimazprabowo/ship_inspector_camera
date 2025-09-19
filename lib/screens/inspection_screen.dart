@@ -15,20 +15,20 @@ import '../widgets/photo_grid_widget.dart';
 import '../widgets/add_inspection_item_dialog.dart';
 import '../widgets/edit_inspection_item_dialog.dart';
 
-// Search result model
+// Simplified search result model
 class SearchResult {
   final String type; // 'category' or 'item'
   final String text;
   final String? categoryName;
   final int? itemId;
-  final GlobalKey key;
+  final int globalIndex; // Global position in the rendered list
   
   SearchResult({
     required this.type,
     required this.text,
     this.categoryName,
     this.itemId,
-    required this.key,
+    required this.globalIndex,
   });
 }
 
@@ -54,20 +54,67 @@ class _InspectionScreenState extends State<InspectionScreen> {
   Map<String, bool> _categoryCollapsedState = {};
   bool _isLoading = true;
   
-  // Search functionality variables
+  // Simplified search functionality variables
   final TextEditingController _searchController = TextEditingController();
   List<SearchResult> _searchResults = [];
   int _currentSearchIndex = -1;
   bool _isSearching = false;
   final ScrollController _scrollController = ScrollController();
-  final Map<String, GlobalKey> _categoryKeys = {};
-  final Map<int, GlobalKey> _itemKeys = {};
   Timer? _searchDebounceTimer;
+  
+  // Pre-rendered widget list for non-lazy loading
+  List<Widget> _allRenderedWidgets = [];
+  List<double> _widgetPositions = [];
+  
+  // Smart arrow button logic with real-time tracking
+  double _currentScrollPosition = 0.0;
+  
+  // Check if there are search results above current scroll position
+  bool _hasResultsAbove() {
+    if (_searchResults.isEmpty) return false;
+    
+    final currentViewportTop = _currentScrollPosition;
+    
+    for (int i = 0; i < _searchResults.length; i++) {
+      final result = _searchResults[i];
+      final resultPosition = result.globalIndex * 200.0;
+      
+      if (resultPosition < currentViewportTop - 100) { // 100px buffer
+        return true;
+      }
+    }
+    return false;
+  }
+  
+  // Check if there are search results below current scroll position
+  bool _hasResultsBelow() {
+    if (_searchResults.isEmpty) return false;
+    
+    final screenHeight = MediaQuery.of(context).size.height;
+    final currentViewportBottom = _currentScrollPosition + screenHeight;
+    
+    for (int i = 0; i < _searchResults.length; i++) {
+      final result = _searchResults[i];
+      final resultPosition = result.globalIndex * 200.0;
+      
+      if (resultPosition > currentViewportBottom + 100) { // 100px buffer
+        return true;
+      }
+    }
+    return false;
+  }
 
   @override
   void initState() {
     super.initState();
     _loadInspectionData();
+    
+    // Add scroll listener to track current position
+    _scrollController.addListener(() {
+      setState(() {
+        _currentScrollPosition = _scrollController.offset;
+      });
+    });
   }
 
   @override
@@ -83,7 +130,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
     // Cancel previous timer if exists
     _searchDebounceTimer?.cancel();
     
-    if (query.trim().length < 3) {
+    if (query.trim().length < 2) {
       setState(() {
         _searchResults.clear();
         _currentSearchIndex = -1;
@@ -92,8 +139,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
       return;
     }
 
-    // Set debounce timer for 800ms
-    _searchDebounceTimer = Timer(const Duration(milliseconds: 800), () {
+    // Set debounce timer for 500ms
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 500), () {
       _executeSearch(query);
     });
   }
@@ -106,80 +153,90 @@ class _InspectionScreenState extends State<InspectionScreen> {
     });
 
     final groupedItems = _groupItemsByCategory();
-    final categories = groupedItems.keys.where((key) => key != '__ITEMS_WITHOUT_CATEGORY__').toList();
+    final categories = groupedItems.keys.where((key) => key != '__ITEMS_WITHOUT_CATEGORY__').toList()..sort();
+    final itemsWithoutCategory = groupedItems['__ITEMS_WITHOUT_CATEGORY__'] ?? [];
     
-    // Search in categories
-    int categoryMatches = 0;
+    int globalIndex = 0;
+    int categoryMatchCount = 0;
+    int titleMatches = 0;
+    int descriptionMatches = 0;
+    
+    // Search in categorized items
     for (String categoryName in categories) {
-      if (categoryName.toLowerCase().contains(query.toLowerCase())) {
-        categoryMatches++;
-        final key = _categoryKeys[categoryName] ?? GlobalKey();
-        _categoryKeys[categoryName] = key;
-        
+      final items = groupedItems[categoryName]!;
+      
+      // Check if category name matches
+      bool categoryMatches = categoryName.toLowerCase().contains(query.toLowerCase());
+      if (categoryMatches) {
+        categoryMatchCount++;
         _searchResults.add(SearchResult(
           type: 'category',
           text: categoryName,
           categoryName: categoryName,
-          key: key,
+          globalIndex: globalIndex,
         ));
+      }
+      globalIndex++; // Category header
+      
+      // Search in items within this category
+      for (InspectionItem item in items) {
+        bool matchesTitle = item.title.toLowerCase().contains(query.toLowerCase());
+        bool matchesDescription = item.description?.toLowerCase().contains(query.toLowerCase()) ?? false;
+        
+        if (matchesTitle) {
+          titleMatches++;
+          _searchResults.add(SearchResult(
+            type: 'item',
+            text: '${item.title} (judul)',
+            categoryName: item.parentName,
+            itemId: item.id,
+            globalIndex: globalIndex,
+          ));
+        }
+        
+        if (matchesDescription) {
+          descriptionMatches++;
+          _searchResults.add(SearchResult(
+            type: 'item',
+            text: '${item.title} (deskripsi)',
+            categoryName: item.parentName,
+            itemId: item.id,
+            globalIndex: globalIndex,
+          ));
+        }
+        
+        globalIndex++; // Item
       }
     }
     
-    // Search in inspection items
-    int titleMatches = 0;
-    int descriptionMatches = 0;
-    int totalItemMatches = 0;
-    
-    for (InspectionItem item in _inspectionItems) {
+    // Search in items without category
+    for (InspectionItem item in itemsWithoutCategory) {
       bool matchesTitle = item.title.toLowerCase().contains(query.toLowerCase());
       bool matchesDescription = item.description?.toLowerCase().contains(query.toLowerCase()) ?? false;
       
-      // Count each match separately - title and description are independent
-      if (matchesTitle) titleMatches++;
-      if (matchesDescription) descriptionMatches++;
-      
-      if (matchesTitle || matchesDescription) {
-        totalItemMatches++;
-        final key = _itemKeys[item.id!] ?? GlobalKey();
-        _itemKeys[item.id!] = key;
-        
-        // Create separate search results for title and description matches
-        if (matchesTitle && matchesDescription) {
-          // Add result for title match
-          _searchResults.add(SearchResult(
-             type: 'item',
-             text: '${item.title} (judul)',
-             categoryName: item.parentName,
-             itemId: item.id,
-             key: key,
-           ));
-          
-          // Add result for description match
-          _searchResults.add(SearchResult(
-             type: 'item',
-             text: '${item.title} (deskripsi)',
-             categoryName: item.parentName,
-             itemId: item.id,
-             key: key,
-           ));
-        } else if (matchesTitle) {
-          _searchResults.add(SearchResult(
-             type: 'item',
-             text: item.title,
-             categoryName: item.parentName,
-             itemId: item.id,
-             key: key,
-           ));
-        } else if (matchesDescription) {
-          _searchResults.add(SearchResult(
-             type: 'item',
-             text: '${item.title} (deskripsi)',
-             categoryName: item.parentName,
-             itemId: item.id,
-             key: key,
-           ));
-        }
+      if (matchesTitle) {
+        titleMatches++;
+        _searchResults.add(SearchResult(
+          type: 'item',
+          text: item.title,
+          categoryName: null,
+          itemId: item.id,
+          globalIndex: globalIndex,
+        ));
       }
+      
+      if (matchesDescription) {
+        descriptionMatches++;
+        _searchResults.add(SearchResult(
+          type: 'item',
+          text: '${item.title} (deskripsi)',
+          categoryName: null,
+          itemId: item.id,
+          globalIndex: globalIndex,
+        ));
+      }
+      
+      globalIndex++;
     }
 
     setState(() {
@@ -191,8 +248,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
         String summaryText = 'Ditemukan: ';
         List<String> summaryParts = [];
         
-        if (categoryMatches > 0) {
-          summaryParts.add('$categoryMatches kategori');
+        if (categoryMatchCount > 0) {
+          summaryParts.add('$categoryMatchCount kategori');
         }
         if (titleMatches > 0) {
           summaryParts.add('$titleMatches judul');
@@ -207,11 +264,10 @@ class _InspectionScreenState extends State<InspectionScreen> {
           SnackBar(
             content: Text(summaryText),
             backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
+            duration: const Duration(seconds: 2),
           ),
         );
       } else {
-        // Show red notification when no results found
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Data tidak ditemukan untuk pencarian "$query"'),
@@ -224,104 +280,50 @@ class _InspectionScreenState extends State<InspectionScreen> {
     });
   }
 
-  void _scrollToSearchResult(int index, {int retryCount = 0}) {
+  void _scrollToSearchResult(int index) {
     if (index < 0 || index >= _searchResults.length) return;
     
     final result = _searchResults[index];
+    print('Scrolling to: ${result.text} at global index ${result.globalIndex}');
     
-    // If it's a category result, expand the category first
-    if (result.type == 'category' && result.categoryName != null) {
+    // Expand category if needed
+    if (result.categoryName != null) {
       setState(() {
         _categoryCollapsedState[result.categoryName!] = false;
       });
     }
     
-    // If it's an item result, expand the category that contains this item
-    if (result.type == 'item' && result.categoryName != null) {
-      setState(() {
-        _categoryCollapsedState[result.categoryName!] = false;
-      });
-    }
-
-    // Simple delay to ensure UI updates are complete
-    Future.delayed(const Duration(milliseconds: 300), () {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final context = result.key.currentContext;
-          if (context != null) {
-            // Check if the widget is actually mounted and visible
-            final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
-            if (renderBox == null || !renderBox.attached) {
-              // Widget not properly rendered yet, retry
-              if (retryCount < 3) {
-                print('Widget not rendered yet for: ${result.text}, retrying... (${retryCount + 1}/3)');
-                Future.delayed(const Duration(milliseconds: 500), () {
-                  _scrollToSearchResult(index, retryCount: retryCount + 1);
-                });
-                return;
-              }
-            }
-            
-            // Additional check: ensure widget is actually visible in the widget tree
-            try {
-              final position = renderBox?.localToGlobal(Offset.zero);
-              if (position != null && position.dy < -1000) {
-                // Widget is way off-screen at the top, might need more time to render
-                if (retryCount < 2) {
-                  print('Widget off-screen at top for: ${result.text}, waiting for proper positioning...');
-                  Future.delayed(const Duration(milliseconds: 700), () {
-                    _scrollToSearchResult(index, retryCount: retryCount + 1);
-                  });
-                  return;
-                }
-              }
-            } catch (e) {
-              // Ignore positioning errors and continue with scroll
-            }
-            // Simple scroll to make the item visible
-            try {
-              Scrollable.ensureVisible(
-                context,
-                duration: const Duration(milliseconds: 600),
-                curve: Curves.easeInOut,
-                alignment: 0.2,
-              );
-            } catch (e) {
-              // Simple fallback: Use scroll controller directly
-              final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
-              if (renderBox != null && _scrollController.hasClients) {
-                final position = renderBox.localToGlobal(Offset.zero);
-                final screenHeight = MediaQuery.of(context).size.height;
-                final targetOffset = _scrollController.offset + position.dy - (screenHeight * 0.2);
-                final clampedOffset = targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent);
-                
-                _scrollController.animateTo(
-                  clampedOffset,
-                  duration: const Duration(milliseconds: 600),
-                  curve: Curves.easeInOut,
-                );
-              }
-            }
-        } else {
-          // If context is null, try to rebuild and scroll again
-          if (retryCount < 3) {
-            print('Context is null for search result: ${result.text}, retrying... (${retryCount + 1}/3)');
-            
-            Future.delayed(const Duration(milliseconds: 500), () {
-              if (index < _searchResults.length) {
-                _scrollToSearchResult(index, retryCount: retryCount + 1);
-              }
-            });
-          } else {
-            print('Failed to scroll to search result after 3 retries: ${result.text}');
-          }
-        }
-      });
+    // Add small delay to ensure category expansion is complete
+    Future.delayed(const Duration(milliseconds: 100), () {
+      // Simple scroll based on estimated position with offset for search widget
+      if (_scrollController.hasClients) {
+      // Estimate position: each item is roughly 200px height
+      final estimatedPosition = result.globalIndex * 200.0;
+      
+      // Calculate offset to account for search widget and app bar
+      // Search widget: ~140px, App bar: ~56px, Extra padding: ~100px for better visibility
+      final searchWidgetHeight = 140.0;
+      final appBarHeight = 56.0;
+      final extraPadding = 100.0; // Increased padding for better visibility
+      final totalOffset = searchWidgetHeight + appBarHeight + extraPadding;
+      
+      final adjustedPosition = (estimatedPosition - totalOffset).clamp(0.0, double.infinity);
+      
+      final maxScroll = _scrollController.position.maxScrollExtent;
+      final targetPosition = adjustedPosition.clamp(0.0, maxScroll);
+      
+        _scrollController.animateTo(
+          targetPosition,
+          duration: const Duration(milliseconds: 800),
+          curve: Curves.easeInOut,
+        );
+      }
     });
   }
 
   // Helper method to create highlighted text widget
   Widget _buildHighlightedText(String text, String searchQuery, {TextStyle? style}) {
-    if (searchQuery.trim().length < 3 || searchQuery.isEmpty) {
+    if (searchQuery.trim().length < 2 || searchQuery.isEmpty) {
       return Text(text, style: style);
     }
 
@@ -383,35 +385,74 @@ class _InspectionScreenState extends State<InspectionScreen> {
   void _navigateToPreviousResult() {
     if (_searchResults.isEmpty) return;
     
-    // Dismiss keyboard when arrow is pressed
     FocusScope.of(context).unfocus();
     
-    setState(() {
-      _currentSearchIndex = _currentSearchIndex <= 0 
-          ? _searchResults.length - 1 
-          : _currentSearchIndex - 1;
-    });
-    
-    // Add small delay to ensure state update is complete before scrolling
-    Future.delayed(const Duration(milliseconds: 50), () {
+    // If we're at the first item but there are results above viewport, 
+    // find the nearest result above current scroll position
+    if (_currentSearchIndex <= 0 && _hasResultsAbove()) {
+      final currentViewportTop = _currentScrollPosition;
+      int targetIndex = -1;
+      
+      for (int i = _searchResults.length - 1; i >= 0; i--) {
+        final result = _searchResults[i];
+        final resultPosition = result.globalIndex * 200.0;
+        
+        if (resultPosition < currentViewportTop - 100) {
+          targetIndex = i;
+          break;
+        }
+      }
+      
+      if (targetIndex >= 0) {
+        setState(() {
+          _currentSearchIndex = targetIndex;
+        });
+        _scrollToSearchResult(_currentSearchIndex);
+      }
+    } else if (_currentSearchIndex > 0) {
+      // Normal sequential navigation
+      setState(() {
+        _currentSearchIndex--;
+      });
       _scrollToSearchResult(_currentSearchIndex);
-    });
+    }
   }
 
   void _navigateToNextResult() {
     if (_searchResults.isEmpty) return;
     
-    // Dismiss keyboard when arrow is pressed
     FocusScope.of(context).unfocus();
     
-    setState(() {
-      _currentSearchIndex = (_currentSearchIndex + 1) % _searchResults.length;
-    });
-    
-    // Add small delay to ensure state update is complete before scrolling
-    Future.delayed(const Duration(milliseconds: 50), () {
+    // If we're at the last item but there are results below viewport,
+    // find the nearest result below current scroll position
+    if (_currentSearchIndex >= _searchResults.length - 1 && _hasResultsBelow()) {
+      final screenHeight = MediaQuery.of(context).size.height;
+      final currentViewportBottom = _currentScrollPosition + screenHeight;
+      int targetIndex = -1;
+      
+      for (int i = 0; i < _searchResults.length; i++) {
+        final result = _searchResults[i];
+        final resultPosition = result.globalIndex * 200.0;
+        
+        if (resultPosition > currentViewportBottom + 100) {
+          targetIndex = i;
+          break;
+        }
+      }
+      
+      if (targetIndex >= 0) {
+        setState(() {
+          _currentSearchIndex = targetIndex;
+        });
+        _scrollToSearchResult(_currentSearchIndex);
+      }
+    } else if (_currentSearchIndex < _searchResults.length - 1) {
+      // Normal sequential navigation
+      setState(() {
+        _currentSearchIndex++;
+      });
       _scrollToSearchResult(_currentSearchIndex);
-    });
+    }
   }
 
   Widget _buildSearchWidget() {
@@ -472,10 +513,16 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       child: IconButton(
                         padding: EdgeInsets.zero,
                         icon: const Icon(Icons.keyboard_arrow_up, size: 20),
-                        onPressed: _navigateToPreviousResult,
+                        onPressed: (_searchResults.isEmpty || (_currentSearchIndex <= 0 && !_hasResultsAbove())) 
+                            ? null 
+                            : _navigateToPreviousResult,
                         style: IconButton.styleFrom(
-                          backgroundColor: Colors.blue.shade50,
-                          foregroundColor: Colors.blue.shade700,
+                          backgroundColor: (_searchResults.isEmpty || (_currentSearchIndex <= 0 && !_hasResultsAbove()))
+                              ? Colors.grey.shade200
+                              : Colors.blue.shade50,
+                          foregroundColor: (_searchResults.isEmpty || (_currentSearchIndex <= 0 && !_hasResultsAbove()))
+                              ? Colors.grey.shade400
+                              : Colors.blue.shade700,
                         ),
                       ),
                     ),
@@ -486,10 +533,16 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       child: IconButton(
                         padding: EdgeInsets.zero,
                         icon: const Icon(Icons.keyboard_arrow_down, size: 20),
-                        onPressed: _navigateToNextResult,
+                        onPressed: (_searchResults.isEmpty || (_currentSearchIndex >= _searchResults.length - 1 && !_hasResultsBelow())) 
+                            ? null 
+                            : _navigateToNextResult,
                         style: IconButton.styleFrom(
-                          backgroundColor: Colors.blue.shade50,
-                          foregroundColor: Colors.blue.shade700,
+                          backgroundColor: (_searchResults.isEmpty || (_currentSearchIndex >= _searchResults.length - 1 && !_hasResultsBelow()))
+                              ? Colors.grey.shade200
+                              : Colors.blue.shade50,
+                          foregroundColor: (_searchResults.isEmpty || (_currentSearchIndex >= _searchResults.length - 1 && !_hasResultsBelow()))
+                              ? Colors.grey.shade400
+                              : Colors.blue.shade700,
                         ),
                       ),
                     ),
@@ -499,11 +552,11 @@ class _InspectionScreenState extends State<InspectionScreen> {
             ],
           ),
           // Show minimum character message
-          if (_searchController.text.isNotEmpty && _searchController.text.trim().length < 3)
+          if (_searchController.text.isNotEmpty && _searchController.text.trim().length < 2)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                'Minimal 3 karakter untuk pencarian',
+                'Minimal 2 karakter untuk pencarian',
                 style: TextStyle(
                   color: Colors.orange.shade700,
                   fontSize: 12,
@@ -1157,16 +1210,16 @@ class _InspectionScreenState extends State<InspectionScreen> {
     final categories = groupedItems.keys.where((key) => key != '__ITEMS_WITHOUT_CATEGORY__').toList()..sort();
     final itemsWithoutCategory = groupedItems['__ITEMS_WITHOUT_CATEGORY__'] ?? [];
 
-    return ListView(
+    return SingleChildScrollView(
       controller: _scrollController,
-      children: [
-        // Display categorized items in cards
-        ...categories.map((categoryName) {
+      child: Column(
+        children: [
+          // Display categorized items in cards
+          ...categories.map((categoryName) {
           final items = groupedItems[categoryName]!;
           final isCollapsed = _categoryCollapsedState[categoryName] ?? false;
           
           return Card(
-            key: _categoryKeys[categoryName],
             margin: const EdgeInsets.only(bottom: 16),
             elevation: 2,
             child: Column(
@@ -1253,7 +1306,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
             child: _buildInspectionItemCard(item),
           )),
         ],
-      ],
+        ],
+      ),
     );
   }
 
@@ -1261,7 +1315,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
     final photos = _itemPhotos[item.id!] ?? [];
 
     return Container(
-      key: _itemKeys[item.id!],
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Card(
         elevation: 1,
