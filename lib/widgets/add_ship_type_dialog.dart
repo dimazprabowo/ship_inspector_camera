@@ -173,6 +173,16 @@ class _AddShipTypeDialogState extends State<AddShipTypeDialog> {
                   labelText: 'Template Inspeksi',
                   border: OutlineInputBorder(),
                 ),
+                selectedItemBuilder: (BuildContext context) {
+                  return [
+                    const Text('Tanpa Template'),
+                    ..._presets.map((preset) => Text(
+                      preset.name,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    )),
+                  ];
+                },
                 items: [
                   const DropdownMenuItem<InspectionPreset>(
                     value: null,
@@ -180,13 +190,27 @@ class _AddShipTypeDialogState extends State<AddShipTypeDialog> {
                   ),
                   ..._presets.map((preset) => DropdownMenuItem<InspectionPreset>(
                     value: preset,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(preset.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        Text(preset.description, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                      ],
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            preset.name, 
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            preset.description, 
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
+                          ),
+                        ],
+                      ),
                     ),
                   )),
                 ],

@@ -456,6 +456,8 @@ class DatabaseHelper {
         description: presetItem.description,
         sortOrder: presetItem.sortOrder,
         createdAt: DateTime.now(),
+        parentId: presetItem.parentId,
+        parentName: presetItem.parentName,
       );
       await insertInspectionItem(inspectionItem);
     }
