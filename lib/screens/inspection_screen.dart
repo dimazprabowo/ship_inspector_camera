@@ -662,7 +662,11 @@ class _InspectionScreenState extends State<InspectionScreen> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading inspection data: $e')),
+          SnackBar(
+            content: Text('Error loading inspection data: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
         );
       }
     }
@@ -716,7 +720,10 @@ class _InspectionScreenState extends State<InspectionScreen> {
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Foto berhasil disimpan')),
+            const SnackBar(
+              content: Text('Foto berhasil disimpan'),
+              backgroundColor: Colors.green,
+            ),
           );
         }
       }
@@ -743,7 +750,10 @@ class _InspectionScreenState extends State<InspectionScreen> {
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Foto berhasil ditambahkan')),
+            const SnackBar(
+              content: Text('Foto berhasil ditambahkan'),
+              backgroundColor: Colors.green,
+            ),
           );
         }
       }
@@ -800,7 +810,10 @@ class _InspectionScreenState extends State<InspectionScreen> {
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Foto berhasil dihapus')),
+            const SnackBar(
+              content: Text('Foto berhasil dihapus'),
+              backgroundColor: Colors.green,
+              ),
           );
         }
       }
@@ -814,27 +827,64 @@ class _InspectionScreenState extends State<InspectionScreen> {
   }
 
   Future<void> _addNewInspectionItem() async {
-    final result = await showDialog<InspectionItem>(
-      context: context,
-      builder: (context) => AddInspectionItemDialog(shipTypeId: widget.shipType.id!),
-    );
+    try {
+      final result = await showDialog<InspectionItem>(
+        context: context,
+        builder: (context) => AddInspectionItemDialog(shipTypeId: widget.shipType.id!),
+      );
 
-    if (result != null) {
-      await _loadInspectionData();
+      if (result != null) {
+        await _loadInspectionData();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Item inspeksi berhasil ditambahkan'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal menambahkan item inspeksi: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
   }
 
   Future<void> _editInspectionItem(InspectionItem item) async {
-    final result = await showDialog<InspectionItem>(
-      context: context,
-      builder: (context) => EditInspectionItemDialog(item: item),
-    );
+    try {
+      final result = await showDialog<InspectionItem>(
+        context: context,
+        builder: (context) => EditInspectionItemDialog(item: item),
+      );
 
-    if (result != null) {
-      _loadInspectionData();
+      if (result != null) {
+        _loadInspectionData();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Item inspeksi berhasil diupdate'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Item inspeksi berhasil diupdate')),
+          SnackBar(
+            content: Text('Gagal mengupdate item inspeksi: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
         );
       }
     }
@@ -844,29 +894,106 @@ class _InspectionScreenState extends State<InspectionScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Hapus Item Inspeksi'),
-        content: Text('Apakah Anda yakin ingin menghapus "${item.title}"?'),
+        icon: const Icon(
+          Icons.warning_amber_rounded,
+          color: Colors.orange,
+          size: 48,
+        ),
+        title: const Text(
+          'Hapus Item Inspeksi',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Anda akan menghapus item inspeksi:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                      color: Colors.red.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '"${item.title}"',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red.shade800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '⚠️ Peringatan:',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.orange,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              '• Data item inspeksi akan dihapus permanen\n'
+              '• Semua foto terkait akan ikut terhapus\n'
+              '• Tindakan ini tidak dapat dibatalkan',
+              style: TextStyle(fontSize: 13),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Batal'),
           ),
-          TextButton(
+          ElevatedButton.icon(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Hapus'),
+            icon: const Icon(Icons.delete_forever, size: 18),
+            label: const Text('Hapus Permanen'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
           ),
         ],
       ),
     );
 
     if (confirmed == true) {
-      await _dbHelper.deleteInspectionItem(item.id!);
-      _loadInspectionData();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Item inspeksi berhasil dihapus')),
-        );
+      try {
+        await _dbHelper.deleteInspectionItem(item.id!);
+        _loadInspectionData();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Item inspeksi berhasil dihapus'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Gagal menghapus item inspeksi: $e'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       }
     }
   }

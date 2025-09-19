@@ -33,7 +33,11 @@ class _ParentCategoryManagementScreenState extends State<ParentCategoryManagemen
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading categories: $e')),
+          SnackBar(
+            content: Text('Error loading categories: $e'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
         );
       }
     }
@@ -81,7 +85,11 @@ class _ParentCategoryManagementScreenState extends State<ParentCategoryManagemen
                   Navigator.pop(context, true);
                 } catch (e) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error adding category: $e')),
+                    SnackBar(
+                      content: Text('Error adding category: $e'),
+                      backgroundColor: Colors.red,
+                      duration: Duration(seconds: 3),
+                    ),
                   );
                 }
               }
@@ -146,7 +154,11 @@ class _ParentCategoryManagementScreenState extends State<ParentCategoryManagemen
                   Navigator.pop(context, true);
                 } catch (e) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error updating category: $e')),
+                    SnackBar(
+                      content: Text('Error updating category: $e'),
+                      backgroundColor: Colors.red,
+                      duration: Duration(seconds: 3),
+                    ),
                   );
                 }
               }
@@ -174,16 +186,56 @@ class _ParentCategoryManagementScreenState extends State<ParentCategoryManagemen
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Hapus Kategori'),
+        title: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.red, size: 28),
+            SizedBox(width: 8),
+            Text('Peringatan!'),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Apakah Anda yakin ingin menghapus kategori "${category.name}"?'),
-            const SizedBox(height: 8),
-            const Text(
-              'Catatan: Item inspeksi yang menggunakan kategori ini akan otomatis menjadi item tanpa kategori.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+            Text(
+              'Apakah Anda yakin ingin menghapus kategori "${category.name}"?',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                border: Border.all(color: Colors.orange.shade200),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Dampak penghapusan:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange.shade800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    '• Item inspeksi yang menggunakan kategori ini akan menjadi item tanpa kategori',
+                    style: TextStyle(fontSize: 13, color: Colors.orange.shade700),
+                  ),
+                  Text(
+                    '• Tindakan ini tidak dapat dibatalkan',
+                    style: TextStyle(fontSize: 13, color: Colors.orange.shade700),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -192,10 +244,20 @@ class _ParentCategoryManagementScreenState extends State<ParentCategoryManagemen
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Batal'),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Hapus'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.delete, size: 18),
+                SizedBox(width: 4),
+                Text('Hapus'),
+              ],
+            ),
           ),
         ],
       ),
