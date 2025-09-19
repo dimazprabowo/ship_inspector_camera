@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import '../models/inspection_preset.dart';
+import '../models/company.dart';
 import '../services/database_helper.dart';
 import '../widgets/add_preset_dialog.dart';
 import '../widgets/edit_preset_dialog.dart';
 
 class PresetManagementScreen extends StatefulWidget {
-  const PresetManagementScreen({super.key});
+  final Company company;
+  
+  const PresetManagementScreen({
+    super.key,
+    required this.company,
+  });
 
   @override
   _PresetManagementScreenState createState() => _PresetManagementScreenState();
@@ -28,7 +34,7 @@ class _PresetManagementScreenState extends State<PresetManagementScreen> {
     });
 
     try {
-      final presets = await _dbHelper.getInspectionPresets();
+      final presets = await _dbHelper.getInspectionPresetsByCompany(widget.company.id!);
       setState(() {
         _presets = presets;
         _isLoading = false;
@@ -49,7 +55,7 @@ class _PresetManagementScreenState extends State<PresetManagementScreen> {
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AddPresetDialog(
-        companyId: 1, // Default company ID - you may want to pass the actual company ID
+        companyId: widget.company.id!,
         onPresetAdded: (preset) {
           // Preset added callback
         },
@@ -168,9 +174,17 @@ class _PresetManagementScreenState extends State<PresetManagementScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Kelola Template Inspeksi'),
+        title: Text('Kelola Template - ${widget.company.name}'),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: _showAddPresetDialog,
+            tooltip: 'Tambah Template',
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -211,7 +225,10 @@ class _PresetManagementScreenState extends State<PresetManagementScreen> {
                         ),
                         subtitle: preset.description.isNotEmpty
                             ? Text(preset.description)
-                            : null,
+                            : Text(
+                                'Dibuat: ${DateTime.fromMillisecondsSinceEpoch(preset.createdAt).toString().split(' ')[0]}',
+                                style: const TextStyle(color: Colors.grey),
+                              ),
                         trailing: PopupMenuButton<String>(
                           onSelected: (value) {
                             switch (value) {
@@ -229,26 +246,32 @@ class _PresetManagementScreenState extends State<PresetManagementScreen> {
                           itemBuilder: (context) => [
                             const PopupMenuItem(
                               value: 'view',
-                              child: ListTile(
-                                leading: Icon(Icons.visibility),
-                                title: Text('Lihat Item'),
-                                contentPadding: EdgeInsets.zero,
+                              child: Row(
+                                children: [
+                                  Icon(Icons.visibility, color: Colors.green),
+                                  SizedBox(width: 8),
+                                  Text('Lihat Item'),
+                                ],
                               ),
                             ),
                             const PopupMenuItem(
                               value: 'edit',
-                              child: ListTile(
-                                leading: Icon(Icons.edit),
-                                title: Text('Edit'),
-                                contentPadding: EdgeInsets.zero,
+                              child: Row(
+                                children: [
+                                  Icon(Icons.edit, color: Colors.blue),
+                                  SizedBox(width: 8),
+                                  Text('Edit'),
+                                ],
                               ),
                             ),
                             const PopupMenuItem(
                               value: 'delete',
-                              child: ListTile(
-                                leading: Icon(Icons.delete, color: Colors.red),
-                                title: Text('Hapus', style: TextStyle(color: Colors.red)),
-                                contentPadding: EdgeInsets.zero,
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete, color: Colors.red),
+                                  SizedBox(width: 8),
+                                  Text('Hapus'),
+                                ],
                               ),
                             ),
                           ],

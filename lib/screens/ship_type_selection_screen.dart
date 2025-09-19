@@ -9,6 +9,7 @@ import '../widgets/add_preset_dialog.dart';
 import '../widgets/edit_preset_dialog.dart';
 import 'inspection_screen.dart';
 import 'parent_category_management_screen.dart';
+import 'preset_management_screen.dart';
 
 class ShipTypeSelectionScreen extends StatefulWidget {
   final Company company;
@@ -216,7 +217,12 @@ class _ShipTypeSelectionScreenState extends State<ShipTypeSelectionScreen> {
           PopupMenuButton<String>(
             onSelected: (value) {
               if (value == 'manage_presets') {
-                _showPresetManagement();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PresetManagementScreen(company: _currentCompany),
+                  ),
+                );
               } else if (value == 'manage_parent_categories') {
                 Navigator.push(
                   context,
@@ -408,144 +414,6 @@ class _ShipTypeSelectionScreenState extends State<ShipTypeSelectionScreen> {
         onPressed: _addShipType,
         tooltip: 'Tambah Jenis Kapal',
         child: const Icon(Icons.add),
-      ),
-    );
-  }
-
-  void _showPresetManagement() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        maxChildSize: 0.9,
-        minChildSize: 0.5,
-        expand: false,
-        builder: (context, scrollController) => Container(
-          decoration: const BoxDecoration(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.blue,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Kelola Template Inspeksi',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (context) => AddPresetDialog(
-                            companyId: _currentCompany.id!,
-                            onPresetAdded: (preset) {
-                              setState(() {
-                                _presets.add(preset);
-                              });
-                            },
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.add, color: Colors.white),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: _presets.isEmpty
-                    ? const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.inventory_2_outlined, size: 64, color: Colors.grey),
-                            SizedBox(height: 16),
-                            Text(
-                              'Belum ada template inspeksi',
-                              style: TextStyle(fontSize: 18, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        controller: scrollController,
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _presets.length,
-                        itemBuilder: (context, index) {
-                          final preset = _presets[index];
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              leading: const CircleAvatar(
-                                backgroundColor: Colors.blue,
-                                child: Icon(Icons.inventory_2, color: Colors.white),
-                              ),
-                              title: Text(
-                                preset.name,
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                              subtitle: preset.description.isNotEmpty
-                                  ? Text(preset.description)
-                                  : null,
-                              trailing: PopupMenuButton<String>(
-                                onSelected: (value) {
-                                  if (value == 'edit') {
-                                    showDialog(
-                                      context: context,
-                                      builder: (context) => EditPresetDialog(
-                                        preset: preset,
-                                        onPresetUpdated: (updatedPreset) {
-                                          setState(() {
-                                            final index = _presets.indexWhere((p) => p.id == updatedPreset.id);
-                                            if (index != -1) {
-                                              _presets[index] = updatedPreset;
-                                            }
-                                          });
-                                        },
-                                      ),
-                                    );
-                                  } else if (value == 'delete') {
-                                    _deletePreset(preset);
-                                  }
-                                },
-                                itemBuilder: (context) => [
-                                  const PopupMenuItem(
-                                    value: 'edit',
-                                    child: ListTile(
-                                      leading: Icon(Icons.edit),
-                                      title: Text('Edit'),
-                                      contentPadding: EdgeInsets.zero,
-                                    ),
-                                  ),
-                                  const PopupMenuItem(
-                                    value: 'delete',
-                                    child: ListTile(
-                                      leading: Icon(Icons.delete, color: Colors.red),
-                                      title: Text('Hapus', style: TextStyle(color: Colors.red)),
-                                      contentPadding: EdgeInsets.zero,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

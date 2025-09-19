@@ -152,9 +152,7 @@ class _EditPresetDialogState extends State<EditPresetDialog> {
 
         await _dbHelper.updateInspectionPreset(updatedPreset);
 
-        widget.onPresetUpdated(updatedPreset);
-        Navigator.of(context).pop();
-
+        // Delete existing items first
         final existingItems = await _dbHelper.getInspectionPresetItems(widget.preset.id!);
         for (var item in existingItems) {
           await _dbHelper.deleteInspectionPresetItem(item.id!);
@@ -175,6 +173,8 @@ class _EditPresetDialogState extends State<EditPresetDialog> {
             await _dbHelper.insertInspectionPresetItem(presetItem);
           }
         }
+
+        widget.onPresetUpdated(updatedPreset);
 
         if (mounted) {
           Navigator.of(context).pop(true);
