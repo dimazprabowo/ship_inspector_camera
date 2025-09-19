@@ -21,15 +21,54 @@ class SearchResult {
   final String text;
   final String? categoryName;
   final int? itemId;
-  final int globalIndex; // Global position in the rendered list
+  final int staticIndex; // Static position for reference
   
   SearchResult({
     required this.type,
     required this.text,
     this.categoryName,
     this.itemId,
-    required this.globalIndex,
+    required this.staticIndex,
   });
+  
+  // Calculate dynamic position based on current collapse states
+  int getDynamicIndex(Map<String, bool> collapseStates, Map<String, List<InspectionItem>> groupedItems) {
+    int dynamicIndex = 0;
+    final categories = groupedItems.keys.where((key) => key != '__ITEMS_WITHOUT_CATEGORY__').toList()..sort();
+    final itemsWithoutCategory = groupedItems['__ITEMS_WITHOUT_CATEGORY__'] ?? [];
+    
+    // Count visible items before this result
+    for (String categoryName in categories) {
+      final items = groupedItems[categoryName]!;
+      final isCollapsed = collapseStates[categoryName] ?? false;
+      
+      // Always count category header
+      if (type == 'category' && this.categoryName == categoryName) {
+        return dynamicIndex;
+      }
+      dynamicIndex++;
+      
+      // Count items only if category is not collapsed
+      if (!isCollapsed) {
+        for (InspectionItem item in items) {
+          if (type == 'item' && itemId == item.id) {
+            return dynamicIndex;
+          }
+          dynamicIndex++;
+        }
+      }
+    }
+    
+    // Handle items without category
+    for (InspectionItem item in itemsWithoutCategory) {
+      if (type == 'item' && itemId == item.id) {
+        return dynamicIndex;
+      }
+      dynamicIndex++;
+    }
+    
+    return dynamicIndex;
+  }
 }
 
 class InspectionScreen extends StatefulWidget {
@@ -79,10 +118,12 @@ class _InspectionScreenState extends State<InspectionScreen> {
     if (_searchResults.isEmpty) return false;
     
     final currentViewportTop = _currentScrollPosition;
+    final groupedItems = _groupItemsByCategory();
     
     for (int i = 0; i < _searchResults.length; i++) {
       final result = _searchResults[i];
-      final resultPosition = result.globalIndex * 200.0;
+      final dynamicIndex = result.getDynamicIndex(_categoryCollapsedState, groupedItems);
+      final resultPosition = dynamicIndex * 200.0;
       
       if (resultPosition < currentViewportTop - 100) { // 100px buffer
         return true;
@@ -97,10 +138,12 @@ class _InspectionScreenState extends State<InspectionScreen> {
     
     final screenHeight = MediaQuery.of(context).size.height;
     final currentViewportBottom = _currentScrollPosition + screenHeight;
+    final groupedItems = _groupItemsByCategory();
     
     for (int i = 0; i < _searchResults.length; i++) {
       final result = _searchResults[i];
-      final resultPosition = result.globalIndex * 200.0;
+      final dynamicIndex = result.getDynamicIndex(_categoryCollapsedState, groupedItems);
+      final resultPosition = dynamicIndex * 200.0;
       
       if (resultPosition > currentViewportBottom + 100) { // 100px buffer
         return true;
@@ -190,7 +233,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
           type: 'category',
           text: categoryName,
           categoryName: categoryName,
-          globalIndex: globalIndex,
+          staticIndex: globalIndex,
         ));
       }
       globalIndex++; // Category header
@@ -207,7 +250,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
             text: '${item.title} (judul)',
             categoryName: item.parentName,
             itemId: item.id,
-            globalIndex: globalIndex,
+            staticIndex: globalIndex,
           ));
         }
         
@@ -218,7 +261,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
             text: '${item.title} (deskripsi)',
             categoryName: item.parentName,
             itemId: item.id,
-            globalIndex: globalIndex,
+            staticIndex: globalIndex,
           ));
         }
         
@@ -238,7 +281,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
           text: item.title,
           categoryName: null,
           itemId: item.id,
-          globalIndex: globalIndex,
+          staticIndex: globalIndex,
         ));
       }
       
@@ -249,7 +292,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
           text: '${item.title} (deskripsi)',
           categoryName: null,
           itemId: item.id,
-          globalIndex: globalIndex,
+          staticIndex: globalIndex,
         ));
       }
       
@@ -301,7 +344,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
     if (index < 0 || index >= _searchResults.length) return;
     
     final result = _searchResults[index];
-    print('Scrolling to: ${result.text} at global index ${result.globalIndex}');
+    final groupedItems = _groupItemsByCategory();
     
     // Expand category if needed
     if (result.categoryName != null) {
@@ -312,23 +355,26 @@ class _InspectionScreenState extends State<InspectionScreen> {
     
     // Add small delay to ensure category expansion is complete
     Future.delayed(const Duration(milliseconds: 100), () {
-      // Simple scroll based on estimated position with offset for search widget
+      // Calculate dynamic position based on current collapse states
       if (_scrollController.hasClients) {
-      // Estimate position: each item is roughly 200px height
-      final estimatedPosition = result.globalIndex * 200.0;
-      
-      // Calculate offset to account for search widget and app bar
-      // Search widget: ~140px, App bar: ~56px, Extra padding: ~100px for better visibility
-      final searchWidgetHeight = 140.0;
-      final appBarHeight = 56.0;
-      final extraPadding = 100.0; // Increased padding for better visibility
-      final totalOffset = searchWidgetHeight + appBarHeight + extraPadding;
-      
-      final adjustedPosition = (estimatedPosition - totalOffset).clamp(0.0, double.infinity);
-      
-      final maxScroll = _scrollController.position.maxScrollExtent;
-      final targetPosition = adjustedPosition.clamp(0.0, maxScroll);
-      
+        final dynamicIndex = result.getDynamicIndex(_categoryCollapsedState, groupedItems);
+        print('Scrolling to: ${result.text} at dynamic index $dynamicIndex');
+        
+        // Estimate position: each item is roughly 200px height
+        final estimatedPosition = dynamicIndex * 200.0;
+        
+        // Calculate offset to account for search widget and app bar
+        // Search widget: ~140px, App bar: ~56px, Extra padding: ~100px for better visibility
+        final searchWidgetHeight = 140.0;
+        final appBarHeight = 56.0;
+        final extraPadding = 100.0; // Increased padding for better visibility
+        final totalOffset = searchWidgetHeight + appBarHeight + extraPadding;
+        
+        final adjustedPosition = (estimatedPosition - totalOffset).clamp(0.0, double.infinity);
+        
+        final maxScroll = _scrollController.position.maxScrollExtent;
+        final targetPosition = adjustedPosition.clamp(0.0, maxScroll);
+        
         _scrollController.animateTo(
           targetPosition,
           duration: const Duration(milliseconds: 600),
@@ -408,11 +454,13 @@ class _InspectionScreenState extends State<InspectionScreen> {
     // find the nearest result above current scroll position
     if (_currentSearchIndex <= 0 && _hasResultsAbove()) {
       final currentViewportTop = _currentScrollPosition;
+      final groupedItems = _groupItemsByCategory();
       int targetIndex = -1;
       
       for (int i = _searchResults.length - 1; i >= 0; i--) {
         final result = _searchResults[i];
-        final resultPosition = result.globalIndex * 200.0;
+        final dynamicIndex = result.getDynamicIndex(_categoryCollapsedState, groupedItems);
+        final resultPosition = dynamicIndex * 200.0;
         
         if (resultPosition < currentViewportTop - 100) {
           targetIndex = i;
@@ -445,11 +493,13 @@ class _InspectionScreenState extends State<InspectionScreen> {
     if (_currentSearchIndex >= _searchResults.length - 1 && _hasResultsBelow()) {
       final screenHeight = MediaQuery.of(context).size.height;
       final currentViewportBottom = _currentScrollPosition + screenHeight;
+      final groupedItems = _groupItemsByCategory();
       int targetIndex = -1;
       
       for (int i = 0; i < _searchResults.length; i++) {
         final result = _searchResults[i];
-        final resultPosition = result.globalIndex * 200.0;
+        final dynamicIndex = result.getDynamicIndex(_categoryCollapsedState, groupedItems);
+        final resultPosition = dynamicIndex * 200.0;
         
         if (resultPosition > currentViewportBottom + 100) {
           targetIndex = i;
