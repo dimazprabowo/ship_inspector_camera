@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -20,6 +21,80 @@ class CameraService {
 
   final ImagePicker _picker = ImagePicker();
   final DatabaseHelper _dbHelper = DatabaseHelper();
+  
+  // Target file size in bytes (200KB)
+  static const int _targetFileSize = 200 * 1024;
+  
+  /// Fast compress image to target size with smart estimation
+  Future<Uint8List> _compressImageToTargetSize(Uint8List imageBytes, {int targetSize = _targetFileSize}) async {
+    try {
+      // Decode the image
+      img.Image? image = img.decodeImage(imageBytes);
+      if (image == null) return imageBytes;
+      
+      final originalSize = imageBytes.length;
+      
+      // Quick return if already small enough
+      if (originalSize <= targetSize) {
+        debugPrint('Image already under target size: ${(originalSize / 1024).round()}KB');
+        return imageBytes;
+      }
+      
+      // Smart initial estimation based on file size ratio
+      final compressionRatio = targetSize / originalSize;
+      
+      // Estimate initial quality based on compression needed
+      int estimatedQuality;
+      if (compressionRatio > 0.7) {
+        estimatedQuality = 85; // Light compression needed
+      } else if (compressionRatio > 0.4) {
+        estimatedQuality = 65; // Medium compression needed
+      } else if (compressionRatio > 0.2) {
+        estimatedQuality = 45; // Heavy compression needed
+      } else {
+        estimatedQuality = 25; // Very heavy compression needed
+      }
+      
+      // Try estimated quality first
+      Uint8List compressedBytes = img.encodeJpg(image, quality: estimatedQuality);
+      debugPrint('Smart compression: estimated quality=$estimatedQuality, size=${compressedBytes.length} bytes');
+      
+      // Fine-tune if needed (max 2 additional attempts)
+      if (compressedBytes.length > targetSize) {
+        // Too big, reduce quality more aggressively
+        int adjustedQuality = (estimatedQuality * 0.7).round().clamp(15, 95);
+        compressedBytes = img.encodeJpg(image, quality: adjustedQuality);
+        debugPrint('Adjustment 1: quality=$adjustedQuality, size=${compressedBytes.length} bytes');
+        
+        // If still too big, resize image
+        if (compressedBytes.length > targetSize) {
+          double scaleFactor = (targetSize / compressedBytes.length * 0.9).clamp(0.4, 1.0);
+          int newWidth = (image.width * scaleFactor).round();
+          int newHeight = (image.height * scaleFactor).round();
+          
+          img.Image resizedImage = img.copyResize(image, width: newWidth, height: newHeight);
+          compressedBytes = img.encodeJpg(resizedImage, quality: adjustedQuality);
+          debugPrint('Final resize: scale=$scaleFactor, dimensions=${newWidth}x${newHeight}, size=${compressedBytes.length} bytes');
+        }
+      } else if (compressedBytes.length < targetSize * 0.6) {
+        // Too small, we can increase quality a bit
+        int betterQuality = (estimatedQuality * 1.2).round().clamp(15, 95);
+        Uint8List betterBytes = img.encodeJpg(image, quality: betterQuality);
+        if (betterBytes.length <= targetSize) {
+          compressedBytes = betterBytes;
+          debugPrint('Quality improvement: quality=$betterQuality, size=${compressedBytes.length} bytes');
+        }
+      }
+      
+      final finalSizeKB = (compressedBytes.length / 1024).round();
+      debugPrint('Fast compression complete: ${finalSizeKB}KB (target: ${targetSize / 1024}KB)');
+      
+      return compressedBytes;
+    } catch (e) {
+      debugPrint('Error compressing image: $e');
+      return imageBytes;
+    }
+  }
 
   Future<String> _getAppDirectory() async {
     final Directory appDocDir = await getApplicationDocumentsDirectory();
@@ -120,10 +195,12 @@ class CameraService {
     required String itemTitle,
   }) async {
     try {
-      // Capture image using camera
+      // Capture image using camera with optimized settings
       final XFile? image = await _picker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 85,
+        imageQuality: 90, // Start higher, we'll compress smartly
+        maxWidth: 1920,   // Limit initial size for faster processing
+        maxHeight: 1920,
       );
 
       if (image == null) return null;
@@ -135,54 +212,33 @@ class CameraService {
       String appDir = await _getAppDirectory();
       String filePath = path.join(appDir, fileName);
 
-      // Process image to make it square (1:1 aspect ratio)
+      // Process image to make it square using image package (faster)
       File sourceFile = File(image.path);
       final imageBytes = await sourceFile.readAsBytes();
       
-      // Decode image to get dimensions
-      final decodedImage = await decodeImageFromList(imageBytes);
-      final originalWidth = decodedImage.width;
-      final originalHeight = decodedImage.height;
+      // Use image package for faster processing
+      img.Image? originalImage = img.decodeImage(imageBytes);
+      if (originalImage == null) throw Exception('Failed to decode image');
       
       // Calculate square size (use smaller dimension)
-      final squareSize = originalWidth < originalHeight ? originalWidth : originalHeight;
+      final squareSize = originalImage.width < originalImage.height ? originalImage.width : originalImage.height;
       
       // Calculate crop offsets to center the square
-      final xOffset = (originalWidth - squareSize) ~/ 2;
-      final yOffset = (originalHeight - squareSize) ~/ 2;
+      final xOffset = (originalImage.width - squareSize) ~/ 2;
+      final yOffset = (originalImage.height - squareSize) ~/ 2;
       
-      // Create a square cropped image
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-      final paint = Paint();
-      
-      // Draw the cropped square portion
-      canvas.drawImageRect(
-        decodedImage,
-        Rect.fromLTWH(xOffset.toDouble(), yOffset.toDouble(), squareSize.toDouble(), squareSize.toDouble()),
-        Rect.fromLTWH(0, 0, squareSize.toDouble(), squareSize.toDouble()),
-        paint,
+      // Crop to square using image package (much faster)
+      img.Image squareImage = img.copyCrop(
+        originalImage,
+        x: xOffset,
+        y: yOffset,
+        width: squareSize,
+        height: squareSize,
       );
       
-      final picture = recorder.endRecording();
-      final squareImage = await picture.toImage(squareSize, squareSize);
-      final squareImageBytes = await squareImage.toByteData(format: ui.ImageByteFormat.png);
-      
-      // Compress image to max 2MB using image package
-      Uint8List finalImageBytes = squareImageBytes!.buffer.asUint8List();
-      
-      // Check if image is larger than 2MB (2097152 bytes)
-      if (finalImageBytes.length > 2097152) {
-        // Use image package for better compression
-        img.Image? decodedImg = img.decodeImage(finalImageBytes);
-        if (decodedImg != null) {
-          int quality = 85;
-          while (finalImageBytes.length > 2097152 && quality > 20) {
-            quality -= 15;
-            finalImageBytes = img.encodeJpg(decodedImg, quality: quality);
-          }
-        }
-      }
+      // Convert to bytes and compress in one step
+      Uint8List finalImageBytes = img.encodeJpg(squareImage, quality: 90);
+      finalImageBytes = await _compressImageToTargetSize(finalImageBytes);
       
       // Save the compressed square image
       File destinationFile = File(filePath);
@@ -215,26 +271,33 @@ class CameraService {
       // Get existing photos count for this item
       List<InspectionPhoto> existingPhotos = await _dbHelper.getPhotosByInspectionItem(inspectionItemId);
       
-      // Pick image from gallery
+      // Pick image from gallery with size limits for faster processing
       final XFile? image = await _picker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 85,
-        maxWidth: 1920,
-        maxHeight: 1080,
+        imageQuality: 90, // Good quality, we'll compress smartly
+        maxWidth: 2048,   // Limit size for faster processing
+        maxHeight: 2048,
       );
 
       if (image == null) return null;
 
       // Generate filename
-      String fileName = await _generateFileName(itemTitle, existingPhotos.length);
+      String fileName = await _generateFileName(itemTitle, inspectionItemId);
       
       // Get app directory
       String appDir = await _getAppDirectory();
       String filePath = path.join(appDir, fileName);
 
-      // Copy the selected image to our app directory
+      // Read and compress the selected image
       File sourceFile = File(image.path);
-      await sourceFile.copy(filePath);
+      final imageBytes = await sourceFile.readAsBytes();
+      
+      // Compress image to target size (200KB)
+      final compressedBytes = await _compressImageToTargetSize(imageBytes);
+      
+      // Save compressed image
+      File destinationFile = File(filePath);
+      await destinationFile.writeAsBytes(compressedBytes);
 
       // Create InspectionPhoto object
       InspectionPhoto photo = InspectionPhoto(
@@ -278,6 +341,40 @@ class CameraService {
 
   bool doesPhotoFileExist(String filePath) {
     return File(filePath).existsSync();
+  }
+
+  /// Compress existing photo file to target size
+  Future<bool> compressExistingPhoto(String filePath, {int targetSize = _targetFileSize}) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) return false;
+      
+      final originalBytes = await file.readAsBytes();
+      final originalSizeKB = (originalBytes.length / 1024).round();
+      
+      // Skip compression if already under target size
+      if (originalBytes.length <= targetSize) {
+        debugPrint('Photo already under target size: ${originalSizeKB}KB');
+        return true;
+      }
+      
+      debugPrint('Compressing existing photo: ${originalSizeKB}KB -> target: ${targetSize / 1024}KB');
+      
+      final compressedBytes = await _compressImageToTargetSize(originalBytes, targetSize: targetSize);
+      
+      // Only save if compression was successful and reduced size
+      if (compressedBytes.length < originalBytes.length) {
+        await file.writeAsBytes(compressedBytes);
+        final newSizeKB = (compressedBytes.length / 1024).round();
+        debugPrint('Photo compressed successfully: ${originalSizeKB}KB -> ${newSizeKB}KB');
+        return true;
+      }
+      
+      return false;
+    } catch (e) {
+      debugPrint('Error compressing existing photo: $e');
+      return false;
+    }
   }
 
   Future<List<String>> getAvailableExportPaths() async {
