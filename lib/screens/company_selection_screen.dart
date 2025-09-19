@@ -58,6 +58,14 @@ class _CompanySelectionScreenState extends State<CompanySelectionScreen> {
 
     if (result != null) {
       await _loadCompanies();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Perusahaan berhasil ditambahkan'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     }
   }
 
@@ -69,6 +77,14 @@ class _CompanySelectionScreenState extends State<CompanySelectionScreen> {
 
     if (result != null) {
       await _loadCompanies();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Perusahaan berhasil diperbarui'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     }
   }
 
