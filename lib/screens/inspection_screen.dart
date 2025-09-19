@@ -3,15 +3,34 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+import 'dart:async';
 import '../models/company.dart';
 import '../models/ship_type.dart';
 import '../models/inspection_item.dart';
 import '../models/inspection_photo.dart';
+import 'dart:io';
 import '../services/database_helper.dart';
 import '../services/camera_service.dart';
 import '../widgets/photo_grid_widget.dart';
 import '../widgets/add_inspection_item_dialog.dart';
 import '../widgets/edit_inspection_item_dialog.dart';
+
+// Search result model
+class SearchResult {
+  final String type; // 'category' or 'item'
+  final String text;
+  final String? categoryName;
+  final int? itemId;
+  final GlobalKey key;
+  
+  SearchResult({
+    required this.type,
+    required this.text,
+    this.categoryName,
+    this.itemId,
+    required this.key,
+  });
+}
 
 class InspectionScreen extends StatefulWidget {
   final Company company;
@@ -34,6 +53,16 @@ class _InspectionScreenState extends State<InspectionScreen> {
   Map<int, List<InspectionPhoto>> _itemPhotos = {};
   Map<String, bool> _categoryCollapsedState = {};
   bool _isLoading = true;
+  
+  // Search functionality variables
+  final TextEditingController _searchController = TextEditingController();
+  List<SearchResult> _searchResults = [];
+  int _currentSearchIndex = -1;
+  bool _isSearching = false;
+  final ScrollController _scrollController = ScrollController();
+  final Map<String, GlobalKey> _categoryKeys = {};
+  final Map<int, GlobalKey> _itemKeys = {};
+  Timer? _searchDebounceTimer;
 
   @override
   void initState() {
@@ -41,19 +70,463 @@ class _InspectionScreenState extends State<InspectionScreen> {
     _loadInspectionData();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _scrollController.dispose();
+    _searchDebounceTimer?.cancel();
+    super.dispose();
+  }
+
+  // Search functionality methods
+  void _performSearch(String query) {
+    // Cancel previous timer if exists
+    _searchDebounceTimer?.cancel();
+    
+    if (query.trim().length < 3) {
+      setState(() {
+        _searchResults.clear();
+        _currentSearchIndex = -1;
+        _isSearching = false;
+      });
+      return;
+    }
+
+    // Set debounce timer for 800ms
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 800), () {
+      _executeSearch(query);
+    });
+  }
+
+  void _executeSearch(String query) {
+    setState(() {
+      _isSearching = true;
+      _searchResults.clear();
+      _currentSearchIndex = -1;
+    });
+
+    final groupedItems = _groupItemsByCategory();
+    final categories = groupedItems.keys.where((key) => key != '__ITEMS_WITHOUT_CATEGORY__').toList();
+    
+    // Search in categories
+    int categoryMatches = 0;
+    for (String categoryName in categories) {
+      if (categoryName.toLowerCase().contains(query.toLowerCase())) {
+        categoryMatches++;
+        final key = _categoryKeys[categoryName] ?? GlobalKey();
+        _categoryKeys[categoryName] = key;
+        
+        _searchResults.add(SearchResult(
+          type: 'category',
+          text: categoryName,
+          categoryName: categoryName,
+          key: key,
+        ));
+      }
+    }
+    
+    // Search in inspection items
+    int titleMatches = 0;
+    int descriptionMatches = 0;
+    int totalItemMatches = 0;
+    
+    for (InspectionItem item in _inspectionItems) {
+      bool matchesTitle = item.title.toLowerCase().contains(query.toLowerCase());
+      bool matchesDescription = item.description?.toLowerCase().contains(query.toLowerCase()) ?? false;
+      
+      // Count each match separately - title and description are independent
+      if (matchesTitle) titleMatches++;
+      if (matchesDescription) descriptionMatches++;
+      
+      if (matchesTitle || matchesDescription) {
+        totalItemMatches++;
+        final key = _itemKeys[item.id!] ?? GlobalKey();
+        _itemKeys[item.id!] = key;
+        
+        // Create separate search results for title and description matches
+        if (matchesTitle && matchesDescription) {
+          // Add result for title match
+          _searchResults.add(SearchResult(
+             type: 'item',
+             text: '${item.title} (judul)',
+             categoryName: item.parentName,
+             itemId: item.id,
+             key: key,
+           ));
+          
+          // Add result for description match
+          _searchResults.add(SearchResult(
+             type: 'item',
+             text: '${item.title} (deskripsi)',
+             categoryName: item.parentName,
+             itemId: item.id,
+             key: key,
+           ));
+        } else if (matchesTitle) {
+          _searchResults.add(SearchResult(
+             type: 'item',
+             text: item.title,
+             categoryName: item.parentName,
+             itemId: item.id,
+             key: key,
+           ));
+        } else if (matchesDescription) {
+          _searchResults.add(SearchResult(
+             type: 'item',
+             text: '${item.title} (deskripsi)',
+             categoryName: item.parentName,
+             itemId: item.id,
+             key: key,
+           ));
+        }
+      }
+    }
+
+    setState(() {
+      if (_searchResults.isNotEmpty) {
+        _currentSearchIndex = 0;
+        _scrollToSearchResult(0);
+        
+        // Show search summary
+        String summaryText = 'Ditemukan: ';
+        List<String> summaryParts = [];
+        
+        if (categoryMatches > 0) {
+          summaryParts.add('$categoryMatches kategori');
+        }
+        if (titleMatches > 0) {
+          summaryParts.add('$titleMatches judul');
+        }
+        if (descriptionMatches > 0) {
+          summaryParts.add('$descriptionMatches deskripsi');
+        }
+        
+        summaryText += summaryParts.join(', ');
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(summaryText),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        // Show red notification when no results found
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Data tidak ditemukan untuk pencarian "$query"'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      _isSearching = false;
+    });
+  }
+
+  void _scrollToSearchResult(int index, {int retryCount = 0}) {
+    if (index < 0 || index >= _searchResults.length) return;
+    
+    final result = _searchResults[index];
+    
+    // If it's a category result, expand the category first
+    if (result.type == 'category' && result.categoryName != null) {
+      setState(() {
+        _categoryCollapsedState[result.categoryName!] = false;
+      });
+    }
+    
+    // If it's an item result, expand the category that contains this item
+    if (result.type == 'item' && result.categoryName != null) {
+      setState(() {
+        _categoryCollapsedState[result.categoryName!] = false;
+      });
+    }
+
+    // Simple delay to ensure UI updates are complete
+    Future.delayed(const Duration(milliseconds: 300), () {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final context = result.key.currentContext;
+          if (context != null) {
+            // Check if the widget is actually mounted and visible
+            final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
+            if (renderBox == null || !renderBox.attached) {
+              // Widget not properly rendered yet, retry
+              if (retryCount < 3) {
+                print('Widget not rendered yet for: ${result.text}, retrying... (${retryCount + 1}/3)');
+                Future.delayed(const Duration(milliseconds: 500), () {
+                  _scrollToSearchResult(index, retryCount: retryCount + 1);
+                });
+                return;
+              }
+            }
+            
+            // Additional check: ensure widget is actually visible in the widget tree
+            try {
+              final position = renderBox?.localToGlobal(Offset.zero);
+              if (position != null && position.dy < -1000) {
+                // Widget is way off-screen at the top, might need more time to render
+                if (retryCount < 2) {
+                  print('Widget off-screen at top for: ${result.text}, waiting for proper positioning...');
+                  Future.delayed(const Duration(milliseconds: 700), () {
+                    _scrollToSearchResult(index, retryCount: retryCount + 1);
+                  });
+                  return;
+                }
+              }
+            } catch (e) {
+              // Ignore positioning errors and continue with scroll
+            }
+            // Simple scroll to make the item visible
+            try {
+              Scrollable.ensureVisible(
+                context,
+                duration: const Duration(milliseconds: 600),
+                curve: Curves.easeInOut,
+                alignment: 0.2,
+              );
+            } catch (e) {
+              // Simple fallback: Use scroll controller directly
+              final RenderBox? renderBox = context.findRenderObject() as RenderBox?;
+              if (renderBox != null && _scrollController.hasClients) {
+                final position = renderBox.localToGlobal(Offset.zero);
+                final screenHeight = MediaQuery.of(context).size.height;
+                final targetOffset = _scrollController.offset + position.dy - (screenHeight * 0.2);
+                final clampedOffset = targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent);
+                
+                _scrollController.animateTo(
+                  clampedOffset,
+                  duration: const Duration(milliseconds: 600),
+                  curve: Curves.easeInOut,
+                );
+              }
+            }
+        } else {
+          // If context is null, try to rebuild and scroll again
+          if (retryCount < 3) {
+            print('Context is null for search result: ${result.text}, retrying... (${retryCount + 1}/3)');
+            
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (index < _searchResults.length) {
+                _scrollToSearchResult(index, retryCount: retryCount + 1);
+              }
+            });
+          } else {
+            print('Failed to scroll to search result after 3 retries: ${result.text}');
+          }
+        }
+      });
+    });
+  }
+
+  // Helper method to create highlighted text widget
+  Widget _buildHighlightedText(String text, String searchQuery, {TextStyle? style}) {
+    if (searchQuery.trim().length < 3 || searchQuery.isEmpty) {
+      return Text(text, style: style);
+    }
+
+    final String lowerText = text.toLowerCase();
+    final String lowerQuery = searchQuery.toLowerCase();
+    
+    if (!lowerText.contains(lowerQuery)) {
+      return Text(text, style: style);
+    }
+
+    List<TextSpan> spans = [];
+    int start = 0;
+    
+    // Get the base text color from the style, default to black if not specified
+    Color baseTextColor = style?.color ?? Colors.black;
+    
+    while (start < text.length) {
+      final int index = lowerText.indexOf(lowerQuery, start);
+      if (index == -1) {
+        // No more matches, add remaining text
+        spans.add(TextSpan(
+          text: text.substring(start), 
+          style: style?.copyWith(color: baseTextColor),
+        ));
+        break;
+      }
+      
+      // Add text before match
+      if (index > start) {
+        spans.add(TextSpan(
+          text: text.substring(start, index), 
+          style: style?.copyWith(color: baseTextColor),
+        ));
+      }
+      
+      // Add highlighted match
+      spans.add(TextSpan(
+        text: text.substring(index, index + searchQuery.length),
+        style: (style ?? const TextStyle()).copyWith(
+          backgroundColor: Colors.yellow.shade300,
+          fontWeight: FontWeight.bold,
+          color: Colors.black, // Ensure highlighted text is black for readability
+        ),
+      ));
+      
+      start = index + searchQuery.length;
+    }
+    
+    return RichText(
+      text: TextSpan(
+        children: spans,
+        style: style?.copyWith(color: baseTextColor), // Set default color for RichText
+      ),
+      overflow: TextOverflow.ellipsis,
+      maxLines: style?.fontSize != null && style!.fontSize! > 16 ? 1 : 3,
+    );
+  }
+
+  void _navigateToPreviousResult() {
+    if (_searchResults.isEmpty) return;
+    
+    // Dismiss keyboard when arrow is pressed
+    FocusScope.of(context).unfocus();
+    
+    setState(() {
+      _currentSearchIndex = _currentSearchIndex <= 0 
+          ? _searchResults.length - 1 
+          : _currentSearchIndex - 1;
+    });
+    
+    // Add small delay to ensure state update is complete before scrolling
+    Future.delayed(const Duration(milliseconds: 50), () {
+      _scrollToSearchResult(_currentSearchIndex);
+    });
+  }
+
+  void _navigateToNextResult() {
+    if (_searchResults.isEmpty) return;
+    
+    // Dismiss keyboard when arrow is pressed
+    FocusScope.of(context).unfocus();
+    
+    setState(() {
+      _currentSearchIndex = (_currentSearchIndex + 1) % _searchResults.length;
+    });
+    
+    // Add small delay to ensure state update is complete before scrolling
+    Future.delayed(const Duration(milliseconds: 50), () {
+      _scrollToSearchResult(_currentSearchIndex);
+    });
+  }
+
+  Widget _buildSearchWidget() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Cari kategori atau item inspeksi...',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              _performSearch('');
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  onChanged: _performSearch,
+                ),
+              ),
+              if (_searchResults.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Text(
+                    '${_currentSearchIndex + 1}/${_searchResults.length}',
+                    style: TextStyle(
+                      color: Colors.blue.shade700,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        icon: const Icon(Icons.keyboard_arrow_up, size: 20),
+                        onPressed: _navigateToPreviousResult,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.blue.shade50,
+                          foregroundColor: Colors.blue.shade700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        icon: const Icon(Icons.keyboard_arrow_down, size: 20),
+                        onPressed: _navigateToNextResult,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.blue.shade50,
+                          foregroundColor: Colors.blue.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+          // Show minimum character message
+          if (_searchController.text.isNotEmpty && _searchController.text.trim().length < 3)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Minimal 3 karakter untuk pencarian',
+                style: TextStyle(
+                  color: Colors.orange.shade700,
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _loadInspectionData() async {
     try {
       final items = await _dbHelper.getInspectionItemsByShipType(widget.shipType.id!);
-      Map<int, List<InspectionPhoto>> photos = {};
       
       for (var item in items) {
-        final itemPhotos = await _cameraService.getPhotosForItem(item.id!);
-        photos[item.id!] = itemPhotos;
+        final photos = await _cameraService.getPhotosForItem(item.id!);
+        _itemPhotos[item.id!] = photos;
       }
 
       setState(() {
         _inspectionItems = items;
-        _itemPhotos = photos;
         _isLoading = false;
       });
     } catch (e) {
@@ -610,6 +1083,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: true, // Allow body to resize when keyboard appears
       appBar: AppBar(
         title: Text('${widget.shipType.name} - ${widget.company.name}'),
         centerTitle: true,
@@ -667,6 +1141,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
+                      _buildSearchWidget(),
+                      const SizedBox(height: 16),
                       Expanded(
                         child: _buildGroupedInspectionItems(),
                       ),
@@ -682,6 +1158,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
     final itemsWithoutCategory = groupedItems['__ITEMS_WITHOUT_CATEGORY__'] ?? [];
 
     return ListView(
+      controller: _scrollController,
       children: [
         // Display categorized items in cards
         ...categories.map((categoryName) {
@@ -689,6 +1166,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
           final isCollapsed = _categoryCollapsedState[categoryName] ?? false;
           
           return Card(
+            key: _categoryKeys[categoryName],
             margin: const EdgeInsets.only(bottom: 16),
             elevation: 2,
             child: Column(
@@ -730,15 +1208,14 @@ class _InspectionScreenState extends State<InspectionScreen> {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
+                          child: _buildHighlightedText(
                             categoryName,
+                            _searchController.text,
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                               color: Colors.blue.shade700,
                             ),
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
                           ),
                         ),
                         Container(
@@ -784,6 +1261,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
     final photos = _itemPhotos[item.id!] ?? [];
 
     return Container(
+      key: _itemKeys[item.id!],
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Card(
         elevation: 1,
@@ -795,8 +1273,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: Text(
+                    child: _buildHighlightedText(
                       item.title,
+                      _searchController.text,
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -838,13 +1317,12 @@ class _InspectionScreenState extends State<InspectionScreen> {
               ),
               if (item.description != null) ...[
                 const SizedBox(height: 4),
-                Text(
+                _buildHighlightedText(
                   item.description!,
+                  _searchController.text,
                   style: TextStyle(
                     color: Colors.grey[600],
                   ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 3,
                 ),
               ],
               const SizedBox(height: 12),
