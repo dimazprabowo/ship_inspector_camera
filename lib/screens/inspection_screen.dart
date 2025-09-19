@@ -66,8 +66,13 @@ class _InspectionScreenState extends State<InspectionScreen> {
   List<Widget> _allRenderedWidgets = [];
   List<double> _widgetPositions = [];
   
+  // Cache for grouped items to avoid recalculation
+  Map<String, List<InspectionItem>>? _cachedGroupedItems;
+  bool _needsGroupedItemsRefresh = true;
+  
   // Smart arrow button logic with real-time tracking
   double _currentScrollPosition = 0.0;
+  Timer? _scrollUpdateTimer;
   
   // Check if there are search results above current scroll position
   bool _hasResultsAbove() {
@@ -109,12 +114,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
     super.initState();
     _loadInspectionData();
     
-    // Add scroll listener to track current position
-    _scrollController.addListener(() {
-      setState(() {
-        _currentScrollPosition = _scrollController.offset;
-      });
-    });
+    // Add optimized scroll listener to track current position
+    _scrollController.addListener(_onScroll);
   }
 
   @override
@@ -122,7 +123,23 @@ class _InspectionScreenState extends State<InspectionScreen> {
     _searchController.dispose();
     _scrollController.dispose();
     _searchDebounceTimer?.cancel();
+    _scrollUpdateTimer?.cancel();
     super.dispose();
+  }
+
+  // Optimized scroll listener with debouncing
+  void _onScroll() {
+    _currentScrollPosition = _scrollController.offset;
+    
+    // Debounce setState calls to improve performance
+    _scrollUpdateTimer?.cancel();
+    _scrollUpdateTimer = Timer(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        setState(() {
+          // Update UI only when necessary
+        });
+      }
+    });
   }
 
   // Search functionality methods
@@ -314,8 +331,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
       
         _scrollController.animateTo(
           targetPosition,
-          duration: const Duration(milliseconds: 800),
-          curve: Curves.easeInOut,
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.easeInOutCubic,
         );
       }
     });
@@ -466,6 +483,11 @@ class _InspectionScreenState extends State<InspectionScreen> {
               Expanded(
                 child: TextField(
                   controller: _searchController,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (value) {
+                    FocusScope.of(context).unfocus();
+                    _performSearch(value);
+                  },
                   decoration: InputDecoration(
                     hintText: 'Cari kategori atau item inspeksi...',
                     prefixIcon: const Icon(Icons.search),
@@ -475,6 +497,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                             onPressed: () {
                               _searchController.clear();
                               _performSearch('');
+                              FocusScope.of(context).unfocus();
                             },
                           )
                         : null,
@@ -581,6 +604,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
       setState(() {
         _inspectionItems = items;
         _isLoading = false;
+        _needsGroupedItemsRefresh = true; // Invalidate cache when data changes
       });
     } catch (e) {
       setState(() {
@@ -595,6 +619,11 @@ class _InspectionScreenState extends State<InspectionScreen> {
   }
 
   Map<String, List<InspectionItem>> _groupItemsByCategory() {
+    // Return cached result if available and no refresh needed
+    if (_cachedGroupedItems != null && !_needsGroupedItemsRefresh) {
+      return _cachedGroupedItems!;
+    }
+    
     Map<String, List<InspectionItem>> groupedItems = {};
     List<InspectionItem> itemsWithoutCategory = [];
     
@@ -615,6 +644,10 @@ class _InspectionScreenState extends State<InspectionScreen> {
     if (itemsWithoutCategory.isNotEmpty) {
       groupedItems['__ITEMS_WITHOUT_CATEGORY__'] = itemsWithoutCategory;
     }
+    
+    // Cache the result and mark as fresh
+    _cachedGroupedItems = groupedItems;
+    _needsGroupedItemsRefresh = false;
     
     return groupedItems;
   }
@@ -1136,7 +1169,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      resizeToAvoidBottomInset: true, // Allow body to resize when keyboard appears
+      resizeToAvoidBottomInset: false, // Prevent body resize conflicts with scrolling
       appBar: AppBar(
         title: Text('${widget.shipType.name} - ${widget.company.name}'),
         centerTitle: true,
@@ -1212,10 +1245,19 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
     return SingleChildScrollView(
       controller: _scrollController,
-      child: Column(
-        children: [
-          // Display categorized items in cards
-          ...categories.map((categoryName) {
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      child: GestureDetector(
+        onTap: () {
+          // Dismiss keyboard when tapping on content area
+          FocusScope.of(context).unfocus();
+        },
+        child: Column(
+          children: [
+            // Display categorized items in cards
+            ...categories.map((categoryName) {
           final items = groupedItems[categoryName]!;
           final isCollapsed = _categoryCollapsedState[categoryName] ?? false;
           
@@ -1306,7 +1348,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
             child: _buildInspectionItemCard(item),
           )),
         ],
-        ],
+          ],
+        ),
       ),
     );
   }
