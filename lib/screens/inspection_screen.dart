@@ -11,6 +11,9 @@ import '../models/inspection_photo.dart';
 import 'dart:io';
 import '../services/database_helper.dart';
 import '../services/camera_service.dart';
+import '../services/pdf_export_service.dart';
+import '../services/zip_export_service.dart';
+import '../services/file_service.dart';
 import '../widgets/photo_grid_widget.dart';
 import '../widgets/add_inspection_item_dialog.dart';
 import '../widgets/edit_inspection_item_dialog.dart';
@@ -88,6 +91,9 @@ class InspectionScreen extends StatefulWidget {
 class _InspectionScreenState extends State<InspectionScreen> {
   final DatabaseHelper _dbHelper = DatabaseHelper();
   final CameraService _cameraService = CameraService();
+  final PdfExportService _pdfExportService = PdfExportService();
+  final ZipExportService _zipExportService = ZipExportService();
+  final FileService _fileService = FileService();
   List<InspectionItem> _inspectionItems = [];
   Map<int, List<InspectionPhoto>> _itemPhotos = {};
   Map<String, bool> _categoryCollapsedState = {};
@@ -1001,7 +1007,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
   Future<void> _exportPhotosAsZip() async {
     try {
       // Get available export paths
-      final availablePaths = await _cameraService.getAvailableExportPaths();
+      final availablePaths = await _fileService.getAvailableExportPaths();
       
       if (availablePaths.isEmpty) {
         if (mounted) {
@@ -1109,7 +1115,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
       final String? exportPath;
       if (isPdfExport) {
-        exportPath = await _cameraService.exportInspectionPhotosAsPdf(
+        exportPath = await _pdfExportService.exportInspectionPhotosAsPdf(
           widget.shipType.id!,
           widget.shipType.name,
           widget.company.name,
@@ -1117,7 +1123,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
           inspectionDate: widget.shipType.inspectionDate,
         );
       } else {
-        exportPath = await _cameraService.exportInspectionPhotosAsZip(
+        exportPath = await _zipExportService.exportInspectionPhotosAsZip(
           widget.shipType.id!,
           widget.shipType.name,
           widget.company.name,
