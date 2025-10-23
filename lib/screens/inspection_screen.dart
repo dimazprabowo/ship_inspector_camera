@@ -113,6 +113,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
   List<Widget> _allRenderedWidgets = [];
   List<double> _widgetPositions = [];
   
+  // GlobalKeys for accurate scroll positioning
+  Map<String, GlobalKey> _itemKeys = {};
+  
   // Cache for grouped items to avoid recalculation
   Map<String, List<InspectionItem>>? _cachedGroupedItems;
   bool _needsGroupedItemsRefresh = true;
@@ -352,7 +355,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
     if (index < 0 || index >= _searchResults.length) return;
     
     final result = _searchResults[index];
-    final groupedItems = _groupItemsByCategory();
     
     // Expand category if needed
     if (result.categoryName != null) {
@@ -361,32 +363,26 @@ class _InspectionScreenState extends State<InspectionScreen> {
       });
     }
     
-    // Add small delay to ensure category expansion is complete
-    Future.delayed(const Duration(milliseconds: 100), () {
-      // Calculate dynamic position based on current collapse states
-      if (_scrollController.hasClients) {
-        final dynamicIndex = result.getDynamicIndex(_categoryCollapsedState, groupedItems);
-        print('Scrolling to: ${result.text} at dynamic index $dynamicIndex');
-        
-        // Estimate position: each item is roughly 200px height
-        final estimatedPosition = dynamicIndex * 200.0;
-        
-        // Calculate offset to account for search widget and app bar
-        // Search widget: ~140px, App bar: ~56px, Extra padding: ~100px for better visibility
-        final searchWidgetHeight = 140.0;
-        final appBarHeight = 56.0;
-        final extraPadding = 100.0; // Increased padding for better visibility
-        final totalOffset = searchWidgetHeight + appBarHeight + extraPadding;
-        
-        final adjustedPosition = (estimatedPosition - totalOffset).clamp(0.0, double.infinity);
-        
-        final maxScroll = _scrollController.position.maxScrollExtent;
-        final targetPosition = adjustedPosition.clamp(0.0, maxScroll);
-        
-        _scrollController.animateTo(
-          targetPosition,
+    // Add delay to ensure category expansion and widget rendering
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (!mounted || !_scrollController.hasClients) return;
+      
+      // Get the GlobalKey for this item
+      String keyString = '';
+      if (result.type == 'category' && result.categoryName != null) {
+        keyString = 'category_${result.categoryName}';
+      } else if (result.type == 'item' && result.itemId != null) {
+        keyString = 'item_${result.itemId}';
+      }
+      
+      final itemKey = _itemKeys[keyString];
+      if (itemKey != null && itemKey.currentContext != null) {
+        // Use Scrollable.ensureVisible for accurate positioning
+        Scrollable.ensureVisible(
+          itemKey.currentContext!,
           duration: const Duration(milliseconds: 600),
           curve: Curves.easeInOutCubic,
+          alignment: 0.2, // Position item at 20% from top (below search bar)
         );
       }
     });
@@ -1498,7 +1494,12 @@ class _InspectionScreenState extends State<InspectionScreen> {
           final items = groupedItems[categoryName]!;
           final isCollapsed = _categoryCollapsedState[categoryName] ?? false;
           
+          // Create or get GlobalKey for this category
+          final categoryKeyString = 'category_$categoryName';
+          _itemKeys.putIfAbsent(categoryKeyString, () => GlobalKey());
+          
           return Card(
+            key: _itemKeys[categoryKeyString],
             margin: const EdgeInsets.only(bottom: 16),
             elevation: 2,
             child: Column(
@@ -1593,8 +1594,13 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
   Widget _buildInspectionItemCard(InspectionItem item) {
     final photos = _itemPhotos[item.id!] ?? [];
+    
+    // Create or get GlobalKey for this item
+    final keyString = 'item_${item.id}';
+    _itemKeys.putIfAbsent(keyString, () => GlobalKey());
 
     return Container(
+      key: _itemKeys[keyString],
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Card(
         elevation: 1,

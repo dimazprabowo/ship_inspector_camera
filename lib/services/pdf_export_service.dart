@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path/path.dart' as path;
+import 'package:image/image.dart' as img;
 import '../models/inspection_item.dart';
 import 'database_helper.dart';
 import 'file_service.dart';
@@ -14,6 +15,37 @@ class PdfExportService {
 
   final DatabaseHelper _dbHelper = DatabaseHelper();
   final FileService _fileService = FileService();
+  
+  /// Compress image untuk PDF (max 1024px, quality 85%)
+  Future<Uint8List> _compressImageForPdf(Uint8List imageBytes) async {
+    try {
+      // Decode image
+      final image = img.decodeImage(imageBytes);
+      if (image == null) return imageBytes;
+      
+      // Resize jika terlalu besar (max 1024px untuk sisi terpanjang)
+      img.Image resized;
+      if (image.width > 1024 || image.height > 1024) {
+        if (image.width > image.height) {
+          resized = img.copyResize(image, width: 1024);
+        } else {
+          resized = img.copyResize(image, height: 1024);
+        }
+      } else {
+        resized = image;
+      }
+      
+      // Encode dengan quality 85% (balance antara size dan quality)
+      final compressed = img.encodeJpg(resized, quality: 85);
+      
+      debugPrint('Image compressed: ${imageBytes.length} → ${compressed.length} bytes (${((1 - compressed.length / imageBytes.length) * 100).toStringAsFixed(1)}% reduction)');
+      
+      return Uint8List.fromList(compressed);
+    } catch (e) {
+      debugPrint('Error compressing image: $e');
+      return imageBytes; // Return original jika error
+    }
+  }
 
   /// Export inspection photos as PDF
   Future<String?> exportInspectionPhotosAsPdf(
@@ -69,6 +101,10 @@ class PdfExportService {
             final file = File(photo.filePath);
             if (await file.exists()) {
               final imageBytes = await file.readAsBytes();
+              
+              // Compress image untuk PDF
+              final compressedBytes = await _compressImageForPdf(imageBytes);
+              
               final photoName = photo.fileName
                   .replaceAll('.jpg', '')
                   .replaceAll('.jpeg', '')
@@ -77,7 +113,7 @@ class PdfExportService {
               
               itemPhotos.add({
                 'name': photoName,
-                'image': imageBytes,
+                'image': compressedBytes, // Gunakan compressed image
                 'fileName': photo.fileName, // Keep original filename for sorting reference
               });
             }

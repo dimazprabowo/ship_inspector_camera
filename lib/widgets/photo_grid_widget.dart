@@ -153,6 +153,18 @@ class _PhotoGridWidgetState extends State<PhotoGridWidget> {
                           ? Image.file(
                               File(photo.filePath),
                               fit: BoxFit.cover,
+                              cacheWidth: 240, // Cache dengan resolusi rendah untuk performa
+                              cacheHeight: 240,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: Colors.grey[200],
+                                  child: const Icon(
+                                    Icons.broken_image,
+                                    color: Colors.grey,
+                                    size: 40,
+                                  ),
+                                );
+                              },
                             )
                           : Container(
                               color: Colors.grey[200],
