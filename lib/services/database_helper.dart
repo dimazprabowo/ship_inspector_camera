@@ -26,7 +26,7 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'ship_inspector.db');
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -121,6 +121,17 @@ class DatabaseHelper {
     // Add parent_id column to inspection_preset_items table
     await db.execute('ALTER TABLE inspection_preset_items ADD COLUMN parent_id INTEGER');
 
+    // Create photo_notes table
+    await db.execute('''
+      CREATE TABLE photo_notes(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        photo_id INTEGER NOT NULL,
+        note TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (photo_id) REFERENCES inspection_photos (id) ON DELETE CASCADE
+      )
+    ''');
+
     // Insert sample data
     await _insertSampleData(db);
     
@@ -192,6 +203,19 @@ class DatabaseHelper {
       
       // Insert some default parent categories
       await _insertDefaultParentCategories(db);
+    }
+    
+    if (oldVersion < 6) {
+      // Create photo_notes table
+      await db.execute('''
+        CREATE TABLE photo_notes(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          photo_id INTEGER NOT NULL,
+          note TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          FOREIGN KEY (photo_id) REFERENCES inspection_photos (id) ON DELETE CASCADE
+        )
+      ''');
     }
   }
 
@@ -541,5 +565,58 @@ class DatabaseHelper {
     
     // Then delete the parent category
     return await db.delete('parent_categories', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // Photo Notes CRUD operations
+  Future<int> insertPhotoNote(int photoId, String note) async {
+    final db = await database;
+    return await db.insert('photo_notes', {
+      'photo_id': photoId,
+      'note': note,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  Future<String?> getPhotoNote(int photoId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'photo_notes',
+      where: 'photo_id = ?',
+      whereArgs: [photoId],
+      orderBy: 'created_at DESC',
+      limit: 1,
+    );
+    
+    if (maps.isNotEmpty) {
+      return maps.first['note'] as String;
+    }
+    return null;
+  }
+
+  Future<int> updatePhotoNote(int photoId, String note) async {
+    final db = await database;
+    // Check if note exists
+    final existing = await getPhotoNote(photoId);
+    
+    if (existing != null) {
+      // Update existing note
+      return await db.update(
+        'photo_notes',
+        {
+          'note': note,
+          'created_at': DateTime.now().millisecondsSinceEpoch,
+        },
+        where: 'photo_id = ?',
+        whereArgs: [photoId],
+      );
+    } else {
+      // Insert new note
+      return await insertPhotoNote(photoId, note);
+    }
+  }
+
+  Future<int> deletePhotoNote(int photoId) async {
+    final db = await database;
+    return await db.delete('photo_notes', where: 'photo_id = ?', whereArgs: [photoId]);
   }
 }

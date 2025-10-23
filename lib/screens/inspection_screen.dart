@@ -17,6 +17,7 @@ import '../services/file_service.dart';
 import '../widgets/photo_grid_widget.dart';
 import '../widgets/add_inspection_item_dialog.dart';
 import '../widgets/edit_inspection_item_dialog.dart';
+import '../widgets/add_note_dialog.dart';
 
 // Simplified search result model
 class SearchResult {
@@ -98,6 +99,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
   Map<int, List<InspectionPhoto>> _itemPhotos = {};
   Map<String, bool> _categoryCollapsedState = {};
   bool _isLoading = true;
+  int _photoGridRefreshKey = 0; // Key to force PhotoGridWidget reload
   
   // Simplified search functionality variables
   final TextEditingController _searchController = TextEditingController();
@@ -719,15 +721,41 @@ class _InspectionScreenState extends State<InspectionScreen> {
         itemTitle: item.title,
       );
 
-      if (photo != null) {
+      if (photo != null && mounted) {
+        // Add photo to list first
         setState(() {
           _itemPhotos[item.id!] = [...(_itemPhotos[item.id!] ?? []), photo];
         });
+
+        // Show dialog to add note with photo info
+        final currentPhotos = _itemPhotos[item.id!] ?? [];
+        final photoInfo = 'Foto ${currentPhotos.length}';
+        
+        final note = await showDialog<String>(
+          context: context,
+          builder: (context) => AddNoteDialog(
+            title: 'Tambah Catatan Foto',
+            itemTitle: item.title,
+            photoInfo: photoInfo,
+          ),
+        );
+
+        // Save note if provided
+        if (note != null && note.isNotEmpty) {
+          await _dbHelper.insertPhotoNote(photo.id!, note);
+          
+          // Force PhotoGridWidget to reload notes
+          setState(() {
+            _photoGridRefreshKey++;
+          });
+        }
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Foto berhasil disimpan'),
+            SnackBar(
+              content: Text(note != null && note.isNotEmpty 
+                  ? 'Foto dan catatan berhasil disimpan' 
+                  : 'Foto berhasil disimpan'),
               backgroundColor: Colors.green,
             ),
           );
@@ -749,15 +777,41 @@ class _InspectionScreenState extends State<InspectionScreen> {
         itemTitle: item.title,
       );
 
-      if (photo != null) {
+      if (photo != null && mounted) {
+        // Add photo to list first
         setState(() {
           _itemPhotos[item.id!] = [...(_itemPhotos[item.id!] ?? []), photo];
         });
+
+        // Show dialog to add note with photo info
+        final currentPhotos = _itemPhotos[item.id!] ?? [];
+        final photoInfo = 'Foto ${currentPhotos.length}';
+        
+        final note = await showDialog<String>(
+          context: context,
+          builder: (context) => AddNoteDialog(
+            title: 'Tambah Catatan Foto',
+            itemTitle: item.title,
+            photoInfo: photoInfo,
+          ),
+        );
+
+        // Save note if provided
+        if (note != null && note.isNotEmpty) {
+          await _dbHelper.insertPhotoNote(photo.id!, note);
+          
+          // Force PhotoGridWidget to reload notes
+          setState(() {
+            _photoGridRefreshKey++;
+          });
+        }
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Foto berhasil ditambahkan'),
+            SnackBar(
+              content: Text(note != null && note.isNotEmpty 
+                  ? 'Foto dan catatan berhasil ditambahkan' 
+                  : 'Foto berhasil ditambahkan'),
               backgroundColor: Colors.green,
             ),
           );
@@ -1607,8 +1661,11 @@ class _InspectionScreenState extends State<InspectionScreen> {
               const SizedBox(height: 12),
               if (photos.isNotEmpty)
                 PhotoGridWidget(
+                  key: ValueKey(_photoGridRefreshKey),
                   photos: photos,
                   onDeletePhoto: (photo) => _deletePhoto(photo, item.id!),
+                  refreshKey: ValueKey(_photoGridRefreshKey),
+                  itemTitle: item.title,
                 ),
               const SizedBox(height: 12),
               Row(

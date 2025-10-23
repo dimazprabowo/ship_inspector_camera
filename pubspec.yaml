@@ -61,6 +61,10 @@ dependencies:
   pdf: ^3.10.4
   printing: ^5.12.0
   
+  # Speech to text (online) for note input
+  speech_to_text: ^7.0.0
+  permission_handler: ^11.0.0
+  
   # App icon generator
   flutter_launcher_icons: ^0.13.1
 
