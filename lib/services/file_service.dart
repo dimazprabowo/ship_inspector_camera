@@ -137,10 +137,17 @@ class FileService {
 
   /// Generate safe filename for file system
   String generateSafeFileName(String name) {
-    return name
-        .replaceAll(RegExp(r'[^\w\s-]'), '')  // Remove special characters except word chars, spaces, hyphens
-        .replaceAll(RegExp(r'\s+'), '_')      // Replace spaces with underscores
-        .toLowerCase();                       // Convert to lowercase
+    // Remove special characters
+    String cleaned = name.replaceAll(RegExp(r'[^\w\s-]'), '');
+    
+    // Capitalize setiap kata
+    String capitalized = cleaned.split(' ').map((word) {
+      if (word.isEmpty) return word;
+      return word[0].toUpperCase() + word.substring(1).toLowerCase();
+    }).join(' ');
+    
+    // Replace spaces with underscores
+    return capitalized.replaceAll(RegExp(r'\s+'), '_');
   }
 
   /// Create directory if it doesn't exist

@@ -146,11 +146,18 @@ class PdfExportService {
       pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(20),
+          margin: const pw.EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 100, // Space untuk kop/header (80px lebih banyak)
+            bottom: 20,
+          ),
           build: (pw.Context context) {
             return pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
+                // Space untuk kop/header di atas (bisa diisi manual)
+                pw.SizedBox(height: 10),
                 pw.Center(
                   child: pw.Text(
                     'LAPORAN INSPEKSI KAPAL - Ship Inspector Camera',
@@ -225,11 +232,18 @@ class PdfExportService {
           pdf.addPage(
             pw.Page(
               pageFormat: PdfPageFormat.a4,
-              margin: const pw.EdgeInsets.all(20),
+              margin: const pw.EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 100, // Space untuk kop/header (80px lebih banyak)
+                bottom: 20,
+              ),
               build: (pw.Context context) {
                 return pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
+                    // Space untuk kop/header di atas (bisa diisi manual)
+                    pw.SizedBox(height: 10),
                     // Category header
                     pw.Center(
                       child: pw.Text(
@@ -261,7 +275,10 @@ class PdfExportService {
                             // Second photo cell (or empty cell)
                             rowPhotos.length > 1 
                                 ? _buildPhotoCell(rowPhotos[1])
-                                : pw.Container(height: 200), // Empty cell if no second photo
+                                : pw.Container(
+                                    height: 170, // Same height as _buildPhotoCell
+                                    padding: const pw.EdgeInsets.all(8),
+                                  ),
                           ],
                         );
                       }).toList(),
@@ -298,35 +315,27 @@ class PdfExportService {
     }
   }
 
+  /// Capitalize setiap kata
+  String _capitalizeWords(String text) {
+    if (text.isEmpty) return text;
+    return text.split(' ').map((word) {
+      if (word.isEmpty) return word;
+      return word[0].toUpperCase() + word.substring(1).toLowerCase();
+    }).join(' ');
+  }
+
   /// Build photo cell for PDF table
   pw.Widget _buildPhotoCell(Map<String, dynamic> photoData) {
+    // Capitalize nama foto
+    final photoName = _capitalizeWords(photoData['name'] ?? 'Unknown Photo');
+    
     return pw.Container(
-      height: 200,
+      height: 170, // Reduced height karena tidak ada item title
       padding: const pw.EdgeInsets.all(8),
       child: pw.Column(
-        mainAxisAlignment: pw.MainAxisAlignment.start,
+        mainAxisAlignment: pw.MainAxisAlignment.center,
         children: [
-          // Item title
-          pw.Container(
-            width: double.infinity,
-            padding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            decoration: pw.BoxDecoration(
-              color: PdfColors.blue50,
-              borderRadius: pw.BorderRadius.circular(4),
-            ),
-            child: pw.Text(
-              photoData['itemTitle'] ?? 'Unknown Item',
-              style: pw.TextStyle(
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColors.blue800,
-              ),
-              textAlign: pw.TextAlign.center,
-              maxLines: 1,
-            ),
-          ),
-          pw.SizedBox(height: 8),
-          // Photo
+          // Photo (tanpa item title)
           pw.Container(
             width: 150,
             height: 120,
@@ -350,11 +359,11 @@ class PdfExportService {
                   ),
           ),
           pw.SizedBox(height: 8),
-          // Photo name
+          // Photo name (capitalized)
           pw.Container(
             width: 150,
             child: pw.Text(
-              photoData['name'] ?? 'Unknown Photo',
+              photoName,
               style: const pw.TextStyle(fontSize: 9),
               textAlign: pw.TextAlign.center,
               maxLines: 2,
