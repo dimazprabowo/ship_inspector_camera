@@ -427,11 +427,13 @@ class _ShipTypeSelectionScreenState extends State<ShipTypeSelectionScreen> {
                     ],
                   ),
                 ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: _addShipType,
         tooltip: 'Tambah Jenis Kapal',
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: const Text('Tambah'),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 

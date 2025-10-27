@@ -266,11 +266,13 @@ class _CompanySelectionScreenState extends State<CompanySelectionScreen> {
                     ],
                   ),
                 ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: _addCompany,
         tooltip: 'Tambah Perusahaan',
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: const Text('Tambah'),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }

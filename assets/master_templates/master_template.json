@@ -1,0 +1,74 @@
+{
+  "template_name": "Master Template",
+  "template_description": "Template master untuk inspeksi kapal",
+  "categories": [
+    {
+      "name": "Document",
+      "subcategories": [
+        {
+          "name": "Legal",
+          "description": ""
+        },
+        {
+          "name": "Operasi",
+          "description": ""
+        },
+        {
+          "name": "Sertifikasi Kapal",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "name": "Geladak",
+      "subcategories": [
+        {
+          "name": "Geladak Atas",
+          "description": ""
+        },
+        {
+          "name": "Geladak Tengah",
+          "description": ""
+        },
+        {
+          "name": "Geladak Bawah",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "name": "Ruangan",
+      "subcategories": [
+        {
+          "name": "Ruang Anjungan",
+          "description": ""
+        },
+        {
+          "name": "Ruang Tidur",
+          "description": ""
+        },
+        {
+          "name": "Ruang Penyimpanan",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "name": "Permesinan",
+      "subcategories": [
+        {
+          "name": "Mesin Utama",
+          "description": ""
+        },
+        {
+          "name": "Mesin Pembangkit",
+          "description": ""
+        },
+        {
+          "name": "Mesin Cadangan",
+          "description": ""
+        }
+      ]
+    }
+  ]
+}

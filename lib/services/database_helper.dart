@@ -8,6 +8,7 @@ import '../models/inspection_photo.dart';
 import '../models/inspection_preset.dart';
 import '../models/inspection_preset_item.dart';
 import '../models/parent_category.dart';
+import 'master_template_service.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -132,11 +133,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // Insert sample data
-    await _insertSampleData(db);
-    
-    // Insert default parent categories
-    await _insertDefaultParentCategories(db);
+    // No sample data - let user create their own companies
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -164,8 +161,12 @@ class DatabaseHelper {
         )
       ''');
 
-      // Insert sample presets
-      await _insertSamplePresets(db);
+      // Create Master Template for existing companies
+      final companies = await db.query('companies', limit: 1);
+      if (companies.isNotEmpty) {
+        final companyId = companies.first['id'] as int;
+        await _createMasterTemplateInTransaction(db, companyId);
+      }
     }
     
     if (oldVersion < 3) {
@@ -202,7 +203,7 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE inspection_preset_items ADD COLUMN parent_id INTEGER');
       
       // Insert some default parent categories
-      await _insertDefaultParentCategories(db);
+      // await _insertDefaultParentCategories(db);
     }
     
     if (oldVersion < 6) {
@@ -244,66 +245,10 @@ class DatabaseHelper {
       'created_at': DateTime.now().millisecondsSinceEpoch,
     });
 
-    // Insert sample presets
-    await _insertSamplePresets(db);
+    // Create Master Template for the sample company using the db instance
+    await _createMasterTemplateInTransaction(db, companyId);
   }
 
-  Future<void> _insertSamplePresets(Database db) async {
-    // Get the company ID to associate presets with
-    final companies = await db.query('companies', limit: 1);
-    if (companies.isEmpty) return;
-    
-    final companyId = companies.first['id'] as int;
-    
-    // Insert sample presets
-    int tugboatPresetId = await db.insert('inspection_presets', {
-      'name': 'Tugboat Standard',
-      'description': 'Template inspeksi standar untuk kapal tunda',
-      'company_id': companyId,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    // Insert preset items for tugboat
-    await db.insert('inspection_preset_items', {
-      'preset_id': tugboatPresetId,
-      'title': 'Lambung Depan',
-      'description': 'Foto bagian depan lambung kapal',
-      'sort_order': 1,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    await db.insert('inspection_preset_items', {
-      'preset_id': tugboatPresetId,
-      'title': 'Lambung Kanan',
-      'description': 'Foto bagian kanan lambung kapal',
-      'sort_order': 2,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    await db.insert('inspection_preset_items', {
-      'preset_id': tugboatPresetId,
-      'title': 'Lambung Kiri',
-      'description': 'Foto bagian kiri lambung kapal',
-      'sort_order': 3,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    await db.insert('inspection_preset_items', {
-      'preset_id': tugboatPresetId,
-      'title': 'Lambung Belakang',
-      'description': 'Foto bagian belakang lambung kapal',
-      'sort_order': 4,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-
-    await db.insert('inspection_preset_items', {
-      'preset_id': tugboatPresetId,
-      'title': 'Mesin Utama',
-      'description': 'Foto mesin utama kapal',
-      'sort_order': 5,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
-  }
 
   // Company CRUD operations
   Future<int> insertCompany(Company company) async {
@@ -496,20 +441,20 @@ class DatabaseHelper {
   }
 
   // Insert default parent categories
-  Future<void> _insertDefaultParentCategories(Database db) async {
-    final now = DateTime.now().millisecondsSinceEpoch;
+  // Future<void> _insertDefaultParentCategories(Database db) async {
+  //   final now = DateTime.now().millisecondsSinceEpoch;
     
-    await db.insert('parent_categories', {
-      'name': 'Konstruksi dan Plat',
-      'created_at': now,
-    });
+  //   await db.insert('parent_categories', {
+  //     'name': 'Konstruksi dan Plat',
+  //     'created_at': now,
+  //   });
 
-    await db.insert('parent_categories', {
-      'name': 'Ruangan',
-      'created_at': now,
-    });
+  //   await db.insert('parent_categories', {
+  //     'name': 'Ruangan',
+  //     'created_at': now,
+  //   });
     
-  }
+  // }
 
   // Parent Category CRUD operations
   Future<int> insertParentCategory(ParentCategory category) async {
@@ -618,5 +563,219 @@ class DatabaseHelper {
   Future<int> deletePhotoNote(int photoId) async {
     final db = await database;
     return await db.delete('photo_notes', where: 'photo_id = ?', whereArgs: [photoId]);
+  }
+
+  // Create Master Template for a company (default template)
+  Future<int> createMasterTemplate(int companyId) async {
+    final masterTemplateService = MasterTemplateService();
+    
+    try {
+      // Load default master template from JSON
+      final template = await masterTemplateService.getDefaultTemplate();
+      
+      return await createTemplateFromMasterTemplateObject(companyId, template);
+    } catch (e) {
+      throw Exception('Failed to create master template: $e');
+    }
+  }
+
+  // Create Master Template within a transaction (for _onCreate)
+  Future<int> _createMasterTemplateInTransaction(Database db, int companyId) async {
+    final masterTemplateService = MasterTemplateService();
+    
+    try {
+      // Load default master template from JSON
+      final template = await masterTemplateService.getDefaultTemplate();
+      
+      // Create preset with template name and description
+      final presetId = await db.insert('inspection_presets', {
+        'name': template.templateName,
+        'description': template.templateDescription,
+        'company_id': companyId,
+        'created_at': DateTime.now().millisecondsSinceEpoch,
+      });
+      
+      // Get or create parent categories and insert preset items
+      int sortOrder = 1;
+      
+      for (var category in template.categories) {
+        // Get or create parent category
+        final parentCategory = await _getOrCreateParentCategoryInTransaction(db, category.name);
+        
+        // Insert subcategories as preset items
+        for (var subcategory in category.subcategories) {
+          await db.insert('inspection_preset_items', {
+            'preset_id': presetId,
+            'title': subcategory.name,
+            'description': subcategory.description,
+            'sort_order': sortOrder++,
+            'created_at': DateTime.now().millisecondsSinceEpoch,
+            'parent_id': parentCategory.id,
+          });
+        }
+      }
+      
+      return presetId;
+    } catch (e) {
+      throw Exception('Failed to create master template in transaction: $e');
+    }
+  }
+
+  // Helper function to get or create parent category within transaction
+  Future<ParentCategory> _getOrCreateParentCategoryInTransaction(Database db, String categoryName) async {
+    // Check if category exists
+    final List<Map<String, dynamic>> maps = await db.query(
+      'parent_categories',
+      where: 'name = ?',
+      whereArgs: [categoryName],
+    );
+    
+    if (maps.isNotEmpty) {
+      return ParentCategory.fromMap(maps.first);
+    }
+    
+    // Create new category if not exists
+    final categoryId = await db.insert('parent_categories', {
+      'name': categoryName,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+    
+    return ParentCategory(
+      id: categoryId,
+      name: categoryName,
+      createdAt: DateTime.now(),
+    );
+  }
+
+  // Create template from a specific master template file
+  Future<int> createTemplateFromMasterTemplate(int companyId, String templateName) async {
+    final masterTemplateService = MasterTemplateService();
+    
+    try {
+      // Load specific template by name
+      final template = await masterTemplateService.getTemplateByName(templateName);
+      
+      if (template == null) {
+        throw Exception('Template "$templateName" not found');
+      }
+      
+      return await createTemplateFromMasterTemplateObject(companyId, template);
+    } catch (e) {
+      throw Exception('Failed to create template from master template: $e');
+    }
+  }
+
+  // Create template from MasterTemplate object
+  Future<int> createTemplateFromMasterTemplateObject(int companyId, MasterTemplate template) async {
+    // Create preset with template name and description
+    final preset = InspectionPreset(
+      name: template.templateName,
+      description: template.templateDescription,
+      companyId: companyId,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    
+    final presetId = await insertInspectionPreset(preset);
+    
+    // Get or create parent categories and insert preset items
+    int sortOrder = 1;
+    
+    for (var category in template.categories) {
+      // Get or create parent category
+      final parentCategory = await _getOrCreateParentCategory(category.name);
+      
+      // Insert subcategories as preset items
+      for (var subcategory in category.subcategories) {
+        final presetItem = InspectionPresetItem(
+          presetId: presetId,
+          title: subcategory.name,
+          description: subcategory.description,
+          sortOrder: sortOrder++,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          parentId: parentCategory.id,
+          parentName: parentCategory.name,
+        );
+        
+        await insertInspectionPresetItem(presetItem);
+      }
+    }
+    
+    return presetId;
+  }
+
+  // Helper function to get or create parent category
+  Future<ParentCategory> _getOrCreateParentCategory(String categoryName) async {
+    final db = await database;
+    
+    // Check if category exists
+    final List<Map<String, dynamic>> maps = await db.query(
+      'parent_categories',
+      where: 'name = ?',
+      whereArgs: [categoryName],
+    );
+    
+    if (maps.isNotEmpty) {
+      return ParentCategory.fromMap(maps.first);
+    }
+    
+    // Create new category if not exists
+    final newCategory = ParentCategory(
+      name: categoryName,
+      createdAt: DateTime.now(),
+    );
+    
+    final categoryId = await insertParentCategory(newCategory);
+    return newCategory.copyWith(id: categoryId);
+  }
+
+  // Copy an existing preset with all its items
+  Future<int> copyInspectionPreset(int presetId) async {
+    try {
+      // Get the original preset
+      final db = await database;
+      final List<Map<String, dynamic>> presetMaps = await db.query(
+        'inspection_presets',
+        where: 'id = ?',
+        whereArgs: [presetId],
+      );
+      
+      if (presetMaps.isEmpty) {
+        throw Exception('Preset not found');
+      }
+      
+      final originalPreset = InspectionPreset.fromMap(presetMaps.first);
+      
+      // Create new preset with " - Copy" suffix
+      final newPreset = InspectionPreset(
+        name: '${originalPreset.name} - Copy',
+        description: originalPreset.description,
+        companyId: originalPreset.companyId,
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      );
+      
+      final newPresetId = await insertInspectionPreset(newPreset);
+      
+      // Get all items from original preset
+      final originalItems = await getInspectionPresetItems(presetId);
+      
+      // Copy all items to new preset
+      for (var item in originalItems) {
+        final newItem = InspectionPresetItem(
+          presetId: newPresetId,
+          title: item.title,
+          description: item.description,
+          sortOrder: item.sortOrder,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          parentId: item.parentId,
+          parentName: item.parentName,
+        );
+        
+        await insertInspectionPresetItem(newItem);
+      }
+      
+      return newPresetId;
+    } catch (e) {
+      throw Exception('Failed to copy preset: $e');
+    }
   }
 }

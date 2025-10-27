@@ -383,11 +383,13 @@ class _ParentCategoryManagementScreenState extends State<ParentCategoryManagemen
                     );
                   },
                 ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAddCategoryDialog,
         tooltip: 'Tambah Kategori',
-        child: const Icon(Icons.add),
+        icon: const Icon(Icons.add),
+        label: const Text('Tambah'),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }

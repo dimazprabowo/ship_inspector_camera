@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/company.dart';
 import '../services/database_helper.dart';
+import '../services/master_template_service.dart';
+import 'template_selection_dialog.dart';
 
 class CompanyDialog extends StatefulWidget {
   final Company? company; // null for add, existing company for edit
@@ -17,6 +19,7 @@ class _CompanyDialogState extends State<CompanyDialog> {
   final _descriptionController = TextEditingController();
   final DatabaseHelper _dbHelper = DatabaseHelper();
   bool _isLoading = false;
+  List<MasterTemplate> _selectedTemplates = [];
 
   @override
   void initState() {
@@ -55,6 +58,22 @@ class _CompanyDialogState extends State<CompanyDialog> {
         final companyId = await _dbHelper.insertCompany(newCompany);
         final savedCompany = newCompany.copyWith(id: companyId);
         
+        // Create templates for the new company
+        try {
+          if (_selectedTemplates.isNotEmpty) {
+            // Create templates from selected master templates
+            for (var template in _selectedTemplates) {
+              await _dbHelper.createTemplateFromMasterTemplateObject(companyId, template);
+            }
+          } else {
+            // Create default Master Template
+            await _dbHelper.createMasterTemplate(companyId);
+          }
+        } catch (e) {
+          // Log error but don't block company creation
+          debugPrint('Warning: Failed to create template: $e');
+        }
+        
         if (mounted) {
           Navigator.pop(context, savedCompany);
         }
@@ -86,17 +105,31 @@ class _CompanyDialogState extends State<CompanyDialog> {
     }
   }
 
+  Future<void> _selectTemplate() async {
+    final templates = await showDialog<List<MasterTemplate>>(
+      context: context,
+      builder: (context) => const TemplateSelectionDialog(),
+    );
+    
+    if (templates != null && templates.isNotEmpty) {
+      setState(() {
+        _selectedTemplates = templates;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.company != null;
     
     return AlertDialog(
       title: Text(isEditing ? 'Edit Perusahaan' : 'Tambah Perusahaan'),
-      content: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+      content: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             TextFormField(
               controller: _nameController,
               decoration: const InputDecoration(
@@ -123,7 +156,82 @@ class _CompanyDialogState extends State<CompanyDialog> {
               maxLines: 3,
               textCapitalization: TextCapitalization.sentences,
             ),
-          ],
+            if (!isEditing) ...[
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.list_alt,
+                          color: Colors.blue.shade600,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Template',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _selectedTemplates.isNotEmpty
+                          ? _selectedTemplates.length == 1
+                              ? _selectedTemplates.first.templateName
+                              : '${_selectedTemplates.length} template dipilih'
+                          : 'Master Template (Default)',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    if (_selectedTemplates.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        _selectedTemplates.length == 1
+                            ? _selectedTemplates.first.templateDescription
+                            : _selectedTemplates.map((t) => t.templateName).join(', '),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _selectTemplate,
+                        icon: const Icon(Icons.edit, size: 16),
+                        label: const Text('Pilih Template'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.blue.shade700,
+                          side: BorderSide(color: Colors.blue.shade300),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            ],
+          ),
         ),
       ),
       actions: [

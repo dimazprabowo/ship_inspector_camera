@@ -6,8 +6,10 @@ class ParentCategory {
   ParentCategory({
     this.id,
     required this.name,
-    required this.createdAt,
-  });
+    dynamic createdAt,
+  }) : createdAt = createdAt is DateTime 
+          ? createdAt.millisecondsSinceEpoch 
+          : createdAt as int;
 
   Map<String, dynamic> toMap() {
     return {

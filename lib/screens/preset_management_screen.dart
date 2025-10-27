@@ -195,6 +195,9 @@ class _PresetManagementScreenState extends State<PresetManagementScreen> {
                   case 'edit':
                     _showEditPresetDialog(preset);
                     break;
+                  case 'copy':
+                    _copyPreset(preset);
+                    break;
                   case 'delete':
                     _showDeleteConfirmation(preset);
                     break;
@@ -214,6 +217,14 @@ class _PresetManagementScreenState extends State<PresetManagementScreen> {
                   child: ListTile(
                     leading: Icon(Icons.edit),
                     title: Text('Edit'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'copy',
+                  child: ListTile(
+                    leading: Icon(Icons.copy, color: Colors.blue),
+                    title: Text('Copy'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),
@@ -299,6 +310,57 @@ class _PresetManagementScreenState extends State<PresetManagementScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error deleting template: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _copyPreset(InspectionPreset preset) async {
+    try {
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+                SizedBox(width: 16),
+                Text('Copying template...'),
+              ],
+            ),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // Copy the preset
+      await _dbHelper.copyInspectionPreset(preset.id!);
+      
+      // Reload presets
+      await _loadPresets();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Template "${preset.name}" copied successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error copying template: $e'),
             backgroundColor: Colors.red,
           ),
         );
